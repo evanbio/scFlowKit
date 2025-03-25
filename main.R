@@ -86,7 +86,7 @@ options(stringsAsFactors = FALSE)
 source("Rutils/load_data.R")
 
 # 指定数据集名称（用户可根据实际数据集调整）
-dataset_name <- "sample"
+dataset_name <- "5k_pbmc_donor4"
 
 # 加载数据
 message("步骤 1：正在加载单细胞 RNA-seq 数据...")
@@ -100,5 +100,39 @@ sce <- load_data(base_path = data_path,
 # 输出基本信息，确认加载成功
 message("Seurat 对象基本信息：")
 print(sce)
+# 加载结果（2025年3月24日）：
+# An object of class Seurat 
+# 25554 features across 5709 samples within 1 assay 
+# Active assay: RNA (25554 features, 0 variable features)
+#   1 layer present: counts
+
 
 #-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+# 数据集介绍
+#-------------------------------------------------------------------------------
+
+# 数据集信息
+# - 数据集：5k Human PBMCs (Donor 4)
+# - 来源：10x Genomics 公开数据集
+# - 描述：Universal 3' Gene Expression dataset analyzed using Cell Ranger 9.0.0
+# - 下载链接：https://www.10xgenomics.com/datasets/5k-human-pbmcs-donor-4-universal-3-prime-gene-expression-dataset-analyzed-using-cell-ranger-9-0-0
+# - 实验背景：外周血单核细胞（PBMC）取自一名健康的女性捐献者（年龄 36-50 岁），由 10x Genomics 从 Cellular Technologies Limited 获取。
+#            使用 Chromium GEM-X Single Cell 3' Reagent Kits v4 和 Illumina NovaSeq 6000 测序，平均每个细胞约 36,000 个读对。
+# - 测序参数：
+#   - Read 1：28 个周期
+#   - i7 索引：10 个周期
+#   - i5 索引：10 个周期
+#   - Read 2：90 个周期
+# - 细胞数量：约 5,000 个外周血单核细胞（PBMC）
+# - 数据格式：10x Genomics 标准格式（matrix.mtx.gz, features.tsv.gz, barcodes.tsv.gz）
+# - 数据路径：data/raw/5k_pbmc_donor4/
+# - 许可：Creative Commons Attribution 4.0 International (CC BY 4.0)
+# - 使用说明：
+#   - 数据为过滤后的基因表达矩阵（filtered feature barcode matrix），已去除低质量条码，可直接用于下游分析。
+#   - 文件为压缩格式（.gz），Seurat 的 Read10X() 函数可直接加载，无需解压。
+# - 补充文件（存放在 docs/5k_pbmc_donor4/ 文件夹）
+
+#-------------------------------------------------------------------------------
+
