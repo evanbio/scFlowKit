@@ -92,6 +92,12 @@ inst_pkg <- function(pkg = NULL,
 
 # 安装 Seurat 包（从 CRAN 安装）
 inst_pkg("Seurat", source = "CRAN")
+inst_pkg("patchwork", source = "CRAN")
+inst_pkg("ggplot2", source = "CRAN")
+inst_pkg("rlang", source = "CRAN")
+inst_pkg("stringr", source = "CRAN")
+inst_pkg("chris-mcginnis-ucsf/DoubletFinder", source = "GitHub")
+
 
 # 提示用户安装完成
 cat("scFlowKit 依赖包安装完成！")
