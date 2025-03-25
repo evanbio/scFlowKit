@@ -1,8 +1,11 @@
 # 忽略 R 历史记录文件
 .Rhistory
 
-# 忽略数据文件夹
+# 忽略data文件夹
 data/
 
-# 忽略补充文件文件夹
+# 忽略docs文件夹
 docs/
+
+# 忽略results文件夹
+results/

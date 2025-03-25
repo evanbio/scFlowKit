@@ -305,8 +305,8 @@ print(SeuratObject::Layers(sce))
 # - 后续步骤（可变基因选择、缩放、降维、聚类等）会继续处理此数据
 message("步骤 2.5：保存预处理数据（标准化后）...")
 dir.create(processed_data_dir, recursive = TRUE, showWarnings = FALSE)
-saveRDS(sce, file = paste0(processed_data_dir, "/", dataset_name, "_normalized.rds"))
-message("预处理数据已保存至：", paste0(processed_data_dir, "/", dataset_name, "_normalized.rds"))
+saveRDS(sce, file = paste0(processed_data_dir, dataset_name, "_normalized.rds"))
+message("预处理数据已保存至：", paste0(processed_data_dir, dataset_name, "_normalized.rds"))
 
 #-------------------------------------------------------------------------------
 
@@ -318,7 +318,7 @@ message("预处理数据已保存至：", paste0(processed_data_dir, "/", datase
 # 可选：从 .rds 文件加载预处理后的 Seurat 对象（跳过步骤 2.1 到 2.5）
 # - 加载路径：processed_data_dir/dataset_name_normalized.rds
 # - 确保 processed_data_dir 和 dataset_name 已定义
-# sce <- readRDS(file = paste0(processed_data_dir, "/", dataset_name, "_normalized.rds"))
+# sce <- readRDS(file = paste0(processed_data_dir, dataset_name, "_normalized.rds"))
 
 # - 识别高变异基因（highly variable genes），用于后续降维和聚类
 # - 使用 Seurat 的 FindVariableFeatures 函数，参数：
@@ -510,7 +510,7 @@ print(sce)
 # 可选：从 .rds 文件加载预处理后的 Seurat 对象（跳过步骤 2.1 到 2.5）
 # - 加载路径：processed_data_dir/dataset_name_normalized.rds
 # - 确保 processed_data_dir 和 dataset_name 已定义
-# sce <- readRDS(file = paste0(processed_data_dir, "/", dataset_name, "_normalized.rds"))
+# sce <- readRDS(file = paste0(processed_data_dir, dataset_name, "_normalized.rds"))
 
 # - 识别高变异基因（highly variable genes），用于后续降维和聚类
 # - 使用 Seurat 的 FindVariableFeatures 函数，参数：
@@ -682,7 +682,332 @@ ggsave(file.path(output_dir, "figures/pca_elbow_plot_after_doublet_removal.png")
 # - 包含质控、过滤、标准化、可变基因选择、细胞周期评分、缩放、降维和双细胞去除的结果
 message("步骤 2.15：保存预处理数据（最终预处理结果）...")
 dir.create(processed_data_dir, recursive = TRUE, showWarnings = FALSE)
-saveRDS(sce, file = paste0(processed_data_dir, "/", dataset_name, "_pca.rds"))
-message("预处理数据已保存至：", paste0(processed_data_dir, "/", dataset_name, "_pca.rds"))
+saveRDS(sce, file = paste0(processed_data_dir, dataset_name, "_pca.rds"))
+message("预处理数据已保存至：", paste0(processed_data_dir, dataset_name, "_pca.rds"))
 
 #-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
+# 步骤 3.1：寻找邻居
+#-------------------------------------------------------------------------------
+
+# 可选：从 .rds 文件加载预处理后的 Seurat 对象（跳过步骤 2.1 到 2.15）
+# - 加载路径：processed_data_dir/dataset_name_pca.rds
+# - 确保 processed_data_dir 和 dataset_name 已定义
+# sce <- readRDS(file = paste0(processed_data_dir, dataset_name, "_pca.rds"))
+
+# - 基于 PCA 空间构建细胞间的邻居图
+# - 使用 Seurat 的 FindNeighbors 函数，常用参数：
+#   - reduction = "pca" 使用 PCA 降维结果
+#   - dims 使用 PCA 的主成分（默认 1:20）
+#   - k.param = 20 邻居数量（默认 20）
+#   - verbose = TRUE 显示进度信息
+# - 结果存储在 sce@graphs 中（包括 RNA_nn 和 RNA_snn）
+message("步骤 3.1：寻找邻居...")
+sce <- FindNeighbors(sce,
+                     reduction = "pca",
+                     dims = 1:20,  # 使用前 20 个主成分
+                     k.param = 20,  # 邻居数量
+                     verbose = TRUE)  # 显示进度信息
+
+# 输出邻居图信息
+message("邻居图信息：")
+print(names(sce@graphs))
+
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
+# 步骤 3.2：聚类
+#-------------------------------------------------------------------------------
+
+# - 基于邻居图（SNN）对细胞进行聚类
+# - 使用 Seurat 的 FindClusters 函数，常用参数：
+#   - resolution = 0.8 分辨率（默认 0.8，控制聚类数量）
+#     - 高分辨率（> 1.0）：生成更多、更小的聚类，适合发现细粒度的细胞亚群
+#     - 低分辨率（< 0.5）：生成更少、较大的聚类，适合发现大类细胞群
+#   - algorithm = 1 使用原始 Louvain 算法（默认 1，
+#   - 可选 2: Louvain with multilevel refinement, 3: SLM, 4: Leiden）
+#   - verbose = TRUE 显示进度信息
+# - 结果存储在 sce@meta.data$seurat_clusters 中
+message("步骤 3.2：聚类...")
+sce <- FindClusters(sce,
+                    resolution = 0.8,  # 分辨率，控制聚类数量
+                    algorithm = 1,  # 使用原始 Louvain 算法
+                    verbose = TRUE)  # 显示进度信息
+
+# 输出聚类数量
+message("聚类数量：", length(unique(sce@meta.data$seurat_clusters)))
+
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
+# 步骤 3.3：运行 t-SNE 降维
+#-------------------------------------------------------------------------------
+
+# - 使用 t-SNE 进行降维，基于 PCA 空间
+# - 使用 Seurat 的 RunTSNE 函数，常用参数：
+#   - reduction = "pca" 使用 PCA 降维结果
+#   - dims 使用 PCA 的主成分（默认 1:5）
+#   - seed.use = 1 设置随机种子，确保结果可重复
+#   - dim.embed = 2 降维后的维度（默认 2D）
+#   - verbose = TRUE 显示进度信息
+# - 结果存储在 sce@reductions$tsne 中
+message("步骤 3.3：运行 t-SNE 降维...")
+sce <- RunTSNE(sce,
+               reduction = "pca",  # 使用 PCA 降维结果
+               dims = 1:5,  # 使用前 5 个主成分
+               seed.use = 1,  # 设置随机种子
+               dim.embed = 2,  # 降维到 2D
+               verbose = TRUE)  # 显示进度信息
+
+# 输出 t-SNE 降维后的 Seurat 对象信息
+message("t-SNE 降维后的 Seurat 对象基本信息：")
+print(sce)
+#  2 dimensional reductions calculated: pca, tsne
+
+# 可视化 t-SNE 结果
+# - 使用 DimPlot 绘制 t-SNE 散点图，展示 TSNE_1 和 TSNE_2 的分布
+# - 按聚类结果（seurat_clusters）分组，观察聚类效果
+message("可视化 t-SNE 结果...")
+tsne_plot <- DimPlot(sce, 
+                     reduction = "tsne",  # 使用 t-SNE 降维结果
+                     group.by = "seurat_clusters",  # 按聚类结果分组
+                     label = TRUE,  # 显示分组标签
+                     repel = TRUE)  # 避免标签重叠
+ggsave(file.path(output_dir, "figures/tsne_plot_clusters.png"), tsne_plot, width = 8, height = 6)
+
+# 可视化 t-SNE 结果（按细胞周期阶段分组）
+tsne_phase_plot <- DimPlot(sce, 
+                           reduction = "tsne",  # 使用 t-SNE 降维结果
+                           group.by = "Phase",  # 按细胞周期阶段分组
+                           label = TRUE,  # 显示分组标签
+                           repel = TRUE)  # 避免标签重叠
+ggsave(file.path(output_dir, "figures/tsne_plot_phase.png"), tsne_phase_plot, width = 8, height = 6)
+
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
+# 步骤 3.4：运行 UMAP 降维
+#-------------------------------------------------------------------------------
+Embeddings
+# - 使用 UMAP 进行降维，基于 PCA 空间和邻居图（SNN）
+# - 使用 Seurat 的 RunUMAP 函数，常用参数：
+#   - reduction = "pca" 使用 PCA 降维结果
+#   - dims 使用 PCA 的主成分（默认 1:10）
+#   - n.neighbors = 30 邻居数量（默认 30）
+#   - min.dist = 0.3 最小距离（默认 0.3，控制点之间的距离）
+#   - n.components = 2 降维后的维度（默认 2D）
+#   - seed.use = 1 设置随机种子，确保结果可重复
+#   - verbose = TRUE 显示进度信息
+# - 结果存储在 sce@reductions$umap 中
+message("步骤 3.4：运行 UMAP 降维...")
+sce <- RunUMAP(sce,
+               reduction = "pca",
+               dims = 1:10,  # 使用前 10 个主成分
+               n.neighbors = 30,  # 邻居数量
+               min.dist = 0.3,  # 最小距离
+               n.components = 2,  # 降维到 2D
+               seed.use = 1,  # 设置随机种子
+               verbose = TRUE)  # 显示进度信息
+
+# 输出 UMAP 降维后的 Seurat 对象信息
+message("UMAP 降维后的 Seurat 对象基本信息：")
+print(sce)
+#  3 dimensional reductions calculated: pca, tsne, umap
+
+# 可视化 UMAP 结果
+# - 使用 DimPlot 绘制 UMAP 散点图，展示 UMAP_1 和 UMAP_2 的分布
+# - 按聚类结果（seurat_clusters）分组，观察聚类效果
+message("可视化 UMAP 结果...")
+umap_plot <- DimPlot(sce, 
+                     reduction = "umap",  # 使用 UMAP 降维结果
+                     group.by = "seurat_clusters",  # 按聚类结果分组
+                     label = TRUE,  # 显示分组标签
+                     repel = TRUE)  # 避免标签重叠
+ggsave(file.path(output_dir, "figures/umap_plot_clusters.png"), umap_plot, width = 8, height = 6)
+
+# 可视化 UMAP 结果（按细胞周期阶段分组）
+umap_phase_plot <- DimPlot(sce, 
+                           reduction = "umap",  # 使用 UMAP 降维结果
+                           group.by = "Phase",  # 按细胞周期阶段分组
+                           label = TRUE,  # 显示分组标签
+                           repel = TRUE)  # 避免标签重叠
+ggsave(file.path(output_dir, "figures/umap_plot_phase.png"), umap_phase_plot, width = 8, height = 6)
+
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
+# 步骤 3.5：保存聚类结果
+#-------------------------------------------------------------------------------
+
+# - 保存包含聚类和降维结果的 Seurat 对象为 Rds 文件，路径：processed_data_dir/
+# - 文件名格式：dataset_name_clustered.rds
+# - 包含质控、过滤、标准化、可变基因选择、细胞周期评分、缩放、降维（PCA、t-SNE、UMAP）、双细胞去除和聚类的结果
+message("步骤 3.5：保存聚类结果...")
+dir.create(processed_data_dir, recursive = TRUE, showWarnings = FALSE)
+saveRDS(sce, file = paste0(processed_data_dir, dataset_name, "_umap.rds"))
+message("聚类结果已保存至：", paste0(processed_data_dir, dataset_name, "_umap.rds"))
+
+# - 使用 Embeddings 提取降维结果并保存为 CSV 文件
+# - 提取 PCA、t-SNE 和 UMAP 的降维坐标
+# - 保存路径：processed_data_dir/
+message("保存降维结果（PCA、t-SNE、UMAP）...")
+# 提取 PCA 降维坐标
+pca_embeddings <- Embeddings(sce, reduction = "pca")
+write.csv(pca_embeddings, file = paste0(processed_data_dir, dataset_name, "_pca_embeddings.csv"), row.names = TRUE)
+
+# 提取 t-SNE 降维坐标
+tsne_embeddings <- Embeddings(sce, reduction = "tsne")
+write.csv(tsne_embeddings, file = paste0(processed_data_dir, dataset_name, "_tsne_embeddings.csv"), row.names = TRUE)
+
+# 提取 UMAP 降维坐标
+umap_embeddings <- Embeddings(sce, reduction = "umap")
+write.csv(umap_embeddings, file = paste0(processed_data_dir, dataset_name, "_umap_embeddings.csv"), row.names = TRUE)
+
+message("降维结果已保存至：")
+message("PCA 降维坐标：", paste0(processed_data_dir, dataset_name, "_pca_embeddings.csv"))
+message("t-SNE 降维坐标：", paste0(processed_data_dir, dataset_name, "_tsne_embeddings.csv"))
+message("UMAP 降维坐标：", paste0(processed_data_dir, dataset_name, "_umap_embeddings.csv"))
+
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
+# 步骤 4.1：差异表达分析
+#-------------------------------------------------------------------------------
+
+# - 寻找每个聚类的标志基因（marker genes）
+# - 使用 Seurat 的 FindAllMarkers 函数，常用参数：
+#   - test.use = "MAST" 使用 MAST 检验
+#   - only.pos = TRUE 仅返回上调的基因
+#   - min.pct = 0.25 基因在至少一组细胞中的最低表达比例
+#   - logfc.threshold = 0.5 基因的最小 log2 折叠变化阈值
+#   - verbose = TRUE 显示进度信息
+# - 样本量过大时，可以通过抽样减少计算量
+# - 例如：sce_sub = subset(sce, downsample = 100)，并在 FindAllMarkers 中使用 sce_sub
+# - 结果为差异表达基因列表，包含 p 值、log2 折叠变化等
+message("步骤 4.1：差异表达分析...")
+
+# 获取所有聚类标签
+clusters <- unique(sce@meta.data$seurat_clusters)
+message("聚类数量：", length(clusters))
+
+# 使用 FindAllMarkers 分析所有聚类的标志基因
+all_markers_df <- FindAllMarkers(sce,
+                                 test.use = "MAST",  # 使用 Wilcoxon 秩和检验
+                                 only.pos = TRUE, 
+                                 min.pct = 0.25,  # 最低表达比例
+                                 logfc.threshold = 0.5,  # 最小 log2 折叠变化
+                                 verbose = TRUE)  # 显示进度信息
+
+# 保存标志基因结果为 CSV 文件
+message("保存标志基因结果...")
+write.csv(all_markers_df, 
+          file = file.path(output_dir, "table", paste0(dataset_name, "_cluster_markers.csv")), 
+          row.names = FALSE)
+message("标志基因结果已保存至：", file.path(output_dir, "table", 
+                                 paste0(dataset_name, "_cluster_markers.csv")))
+
+# 输出每个聚类的 top 5 标志基因
+message("每个聚类的 top 5 标志基因：")
+# - top 5 定义：按 log2 折叠变化（avg_log2FC）降序排序
+top_markers <- all_markers_df %>%
+  group_by(cluster) %>%
+  arrange(desc(avg_log2FC)) %>%
+  slice_head(n = 5) %>%
+  ungroup()
+
+# 按聚类分组打印 top 5 标志基因，并保存到文件
+top_markers_file <- 
+write.csv(top_markers, 
+          file = file.path(output_dir, "table", paste0(dataset_name, "_top5_markers.csv")), 
+          row.names = FALSE)
+message("Top 5 标志基因已保存至：", file.path(output_dir, "table", 
+                                     paste0(dataset_name, "_top5_markers.csv")))
+
+
+# 按聚类分组打印 top 5 标志基因
+for (cluster in unique(top_markers$cluster)) {
+  message("聚类 ", cluster, "：")
+  cluster_top <- top_markers[top_markers$cluster == cluster, ]
+  print(cluster_top[, c("gene", "p_val_adj", "avg_log2FC")])
+}
+
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
+# 步骤 4.2：可视化标志基因
+#-------------------------------------------------------------------------------
+
+# - 可视化每个聚类的 top 标志基因，验证聚类结果
+# - 使用 Seurat 的 FeaturePlot、VlnPlot 和 DotPlot 函数
+# - FeaturePlot 在 UMAP 空间上绘制基因表达（散点图）
+# - VlnPlot 绘制基因在不同聚类中的表达分布（小提琴图）
+# - DotPlot 绘制基因在不同聚类中的表达比例和表达量（点图）
+# - 可视化结果保存到子目录 results/figures/marker_visualization/
+message("步骤 4.2：可视化标志基因...")
+
+# 读取 top 5 标志基因文件（如果从头运行，可以直接使用 top_markers）
+# top_markers <- read.csv(file.path(output_dir, "table", paste0(dataset_name, "_top5_markers.csv")))
+
+# 创建子目录用于存储可视化结果
+marker_viz_dir <- paste0(output_dir, "figures/marker_visualization/")
+dir.create(marker_viz_dir, recursive = TRUE, showWarnings = FALSE)
+
+# 提取 top 基因列表（从 top_markers 中获取）
+top_genes <- unique(top_markers$gene)
+message("Top 标志基因数量：", length(top_genes))
+
+# 使用 FeaturePlot 可视化 top 基因在 UMAP 空间的表达
+message("绘制 FeaturePlot（UMAP 空间）...")
+for (gene in top_genes) {
+  p <- FeaturePlot(sce,
+                   features = gene,
+                   reduction = "umap",  # 使用 UMAP 降维结果
+                   pt.size = 0.5,  # 调整点的大小，减少重叠
+                   alpha = 0.7,  # 调整透明度，提高清晰度
+                   label = TRUE,  # 显示基因名
+                   repel = TRUE)  # 避免标签重叠
+  ggsave(paste0(marker_viz_dir, "umap_feature_", gene, ".png"), p, width = 8, height = 6)
+}
+
+# 使用 VlnPlot 可视化 top 基因在不同聚类中的表达分布
+message("绘制 VlnPlot（按聚类分组）...")
+for (gene in top_genes) {
+  p <- VlnPlot(sce,
+               features = gene,
+               group.by = "seurat_clusters",  # 按聚类分组
+               pt.size = 0)  # 不显示单个细胞的点
+  ggsave(paste0(marker_viz_dir, "vlnplot_", gene, ".png"), p, width = 10, height = 6)
+}
+
+# 使用 DotPlot 可视化 top 基因在不同聚类中的表达比例和表达量
+message("绘制 DotPlot（按聚类分组）...")
+# 使用 top_genes（78 个基因），每次 10 个基因一组
+gene_groups <- split(top_genes, ceiling(seq_along(top_genes) / 10))
+message("DotPlot 分组数量：", length(gene_groups))
+
+# 按基因分组绘制 DotPlot，横坐标为簇，纵坐标为基因
+for (i in seq_along(gene_groups)) {
+  group_genes <- gene_groups[[i]]
+  message("绘制 DotPlot 分组 ", i, "（基因：", paste(group_genes, collapse = ", "), "）...")
+  p <- DotPlot(sce,
+               features = group_genes,
+               group.by = "seurat_clusters",  # 横坐标为簇
+               dot.scale = 6) +  # 调整点的大小
+    coord_flip() +  # 翻转坐标轴，横坐标为簇，纵坐标为基因
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))  # 旋转横坐标标签（簇）
+  ggsave(paste0(marker_viz_dir, "dotplot_top_markers_group_", i, ".png"), p, width = 12, height = 6)
+}
+
+message("标志基因可视化已完成，图表保存至：", marker_viz_dir)
+
+#-------------------------------------------------------------------------------
+
+

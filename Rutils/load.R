@@ -12,6 +12,8 @@ library(ggplot2)     # 加载 ggplot2 包，用于绘图
 library(rlang)       # 加载 rlang 包，用于解析过滤条件表达式
 library(stringr)     # 加载 stringr 包，字符串处理，比如首字母大写
 library(DoubletFinder) # 加载 DoubletFinder 包，用于双细胞检测
+library(MAST)       # 加载 MAST 包，用于差异表达分析
+library(tidyverse)
 
 # 提示用户载入完成
 cat("scFlowKit 依赖包载入完成！\n")
