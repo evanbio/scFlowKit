@@ -18,6 +18,10 @@
 
 # 当前版本功能
 # - 数据加载：支持 10X Genomics 数据格式（.h5 或 .mtx）
+# - 数据预处理：质量控制（QC）、过滤、标准化、可变基因选择、细胞周期评分
+# - 聚类和降维：PCA、t-SNE、UMAP
+# - 差异表达分析：识别每个聚类的标志基因
+# - 细胞注释：基于标志基因推断细胞类型
 
 #-------------------------------------------------------------------------------
 
@@ -52,19 +56,19 @@ source("Rutils/load.R")
 #-------------------------------------------------------------------------------
 
 # 数据路径：指定输入数据的基础路径，告诉程序从哪里加载单细胞数据
-# - 应指向 data/raw/ 文件夹，具体数据集子路径（如 pbmc3k）由模块函数指定
-# - 示例：如果你的数据在 data/raw/pbmc3k/ 文件夹，保持此值为 "data/raw/"
-data_path <- "data/raw/"
+# - 应指向 data/raw 文件夹，具体数据集子路径（如 pbmc3k）由模块函数指定
+# - 示例：如果你的数据在 data/raw/pbmc3k 文件夹，保持此值为 "data/raw"
+data_path <- "data/raw"
 
 # 输出目录：指定分析结果的保存路径，告诉程序把结果保存在哪里
-# - 分析结果（比如图表、表格）会保存在此目录下的 figures/ 和 tables/ 子文件夹
-# - 示例：如果想保存在 results/run1/ 文件夹，设置为 "results/run1/"
-output_dir <- "results/"
+# - 分析结果（比如图表、表格）会保存在此目录下的 figures 和 tables 子文件夹
+# - 示例：如果想保存在 results/run1 文件夹，设置为 "results/run1"
+output_dir <- "results"
 
 # 预处理数据保存路径：指定预处理后数据的保存路径
 # - 预处理数据会保存在此目录下
-# - 示例：data/processed/
-processed_data_dir <- "data/processed/"
+# - 示例：data/processed
+processed_data_dir <- "data/processed"
 
 # 设置系统报错语言为英文，便于调试和阅读
 # - 在非英文环境下运行 R 时，确保错误信息以英文显示
@@ -91,59 +95,63 @@ options(stringsAsFactors = FALSE)
 source("Rutils/load_data.R")
 
 # 指定数据集名称（用户可根据实际数据集调整）
-dataset_name <- "5k_pbmc_donor4"
+# - 支持单个整合样本（例如 "5k_pbmc_combined"）
+# - 支持多个样本（例如 c("5k_pbmc_donor1", "5k_pbmc_donor2", "5k_pbmc_donor3", "5k_pbmc_donor4")）
+# - 或者使用 list.files 自动读取数据目录下的所有样本：dataset_name <- list.files(path = data_path, pattern = "5k_pbmc_donor[0-9]+", full.names = FALSE)
+dataset_name <- c("5k_pbmc_donor1", "5k_pbmc_donor2", "5k_pbmc_donor3", "5k_pbmc_donor4")
 
 # 加载数据
 message("步骤 1：正在加载单细胞 RNA-seq 数据...")
-sce <- load_data(base_path = data_path, 
-                 dataset_name = dataset_name,
-                 min_cells = 3,          # 基因至少在 3 个细胞中表达
-                 min_features = 40,      # 细胞至少表达 40 个基因
-                 project = "scFlowKit",  # Seurat 对象项目名称
-                 assay = "RNA")          # 测序类型
+if (length(dataset_name) == 1) {
+  # 单个整合样本，直接加载
+  sce <- load_data(base_path = data_path, 
+                   dataset_name = dataset_name,
+                   min_cells = 10,         # 基因至少在 10 个细胞中表达
+                   min_features = 40,      # 细胞至少表达 40 个基因
+                   project = "dataset_name",  # Seurat 对象项目名称
+                   assay = "RNA")          # 测序类型
+} else {
+  # 多个样本，分别加载并整合
+  sce_list <- list()
+  for (ds in dataset_name) {
+    message("加载样本：", ds, "...")
+    sce_tmp <- load_data(base_path = data_path, 
+                         dataset_name = ds,
+                         min_cells = 10,
+                         min_features = 40,
+                         project = ds,  # 每个样本使用其名称作为项目名称
+                         assay = "RNA")
+    # 添加样本信息（sample information）
+    sce_tmp$sample <- ds
+    sce_list[[ds]] <- sce_tmp
+  }
+  
+  # 整合多个样本
+  # - 不指定 project 参数，使用第一个 Seurat 对象的 project.name
+  message("整合多个样本...")
+  sce <- merge(sce_list[[1]], y = sce_list[-1], add.cell.id = names(sce_list))
+  
+  # 合并多个count层
+  # - add.cell.id 生成了多个层（counts.5k_pbmc_donor1, counts.5k_pbmc_donor2 等）
+  # - JoinLayers 将这些层合并为一个 counts 层
+  message("合并 assays 下的层...")
+  sce <- JoinLayers(sce)
+}
+merged_seurat <- JoinLayers(merged_seurat)   
+
 
 # 输出基本信息，确认加载成功
 message("Seurat 对象基本信息：")
 print(sce)
-# 加载结果（2025年3月24日）：
-# An object of class Seurat 
-# 25554 features across 5709 samples within 1 assay 
-# Active assay: RNA (25554 features, 0 variable features)
-#   1 layer present: counts
-
 
 #-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-# 数据集介绍
-#-------------------------------------------------------------------------------
-
-# 数据集信息
-# - 数据集：5k Human PBMCs (Donor 4)
-# - 来源：10x Genomics 公开数据集
-# - 描述：Universal 3' Gene Expression dataset analyzed using Cell Ranger 9.0.0
-# - 下载链接：https://www.10xgenomics.com/datasets/5k-human-pbmcs-donor-4-universal-3-prime-gene-expression-dataset-analyzed-using-cell-ranger-9-0-0
-# - 实验背景：外周血单核细胞（PBMC）取自一名健康的女性捐献者（年龄 36-50 岁），由 10x Genomics 从 Cellular Technologies Limited 获取。
-#            使用 Chromium GEM-X Single Cell 3' Reagent Kits v4 和 Illumina NovaSeq 6000 测序，平均每个细胞约 36,000 个读对。
-# - 测序参数：
-#   - Read 1：28 个周期
-#   - i7 索引：10 个周期
-#   - i5 索引：10 个周期
-#   - Read 2：90 个周期
-# - 细胞数量：约 5,000 个外周血单核细胞（PBMC）
-# - 数据格式：10x Genomics 标准格式（matrix.mtx.gz, features.tsv.gz, barcodes.tsv.gz）
-# - 数据路径：data/raw/5k_pbmc_donor4/
-# - 许可：Creative Commons Attribution 4.0 International (CC BY 4.0)
-# - 使用说明：
-#   - 数据为过滤后的基因表达矩阵（filtered feature barcode matrix），已去除低质量条码，可直接用于下游分析。
-#   - 文件为压缩格式（.gz），Seurat 的 Read10X() 函数可直接加载，无需解压。
-# - 补充文件（存放在 docs/5k_pbmc_donor4/ 文件夹）
 
 #-------------------------------------------------------------------------------
 
 
 #-------------------------------------------------------------------------------
 # 步骤 1.5：探索 Seurat 对象结构（注释掉，仅供学习参考）
+# 
 #-------------------------------------------------------------------------------
 
 # # 查看 Seurat 对象的整体结构
@@ -198,18 +206,18 @@ print(sce)
 # 步骤 2：数据预处理和质控
 #-------------------------------------------------------------------------------
 
-# 导入预处理模块
-source("Rutils/preprocess.R")
-
 # 步骤 2.1：计算质控指标
 #-------------------------------------------------------------------------------
+
+# 导入质控指标计算模块
+source("Rutils/calculate_qc_metrics.R") 
+
 # - 计算线粒体基因比例、总 UMI 计数、基因数
 # - 可选计算红细胞和核糖体基因比例（默认不计算）
 # - 可通过 hb_genes 和 ribo_genes 参数传入自定义基因集，例如：
 #   - hb_genes = c("HBB", "HBA1", "HBA2") 指定红细胞基因
 #   - ribo_genes = c("RPL5", "RPS6", "RPL10") 指定核糖体基因
-# - 注意：函数会检查 sce 的基因名大小写模式（全大写、全小写、首字母大写），并转换基因集以匹配
-# - 如果基因名大小写不匹配或基因不存在，会发出警告，建议用户检查基因名并手动调整
+# - 打印随机取样的 10 个基因名，用户可以检查当前基因名的大小写
 
 message("步骤 2.1：计算质控指标...")
 sce <- calculate_qc_metrics(sce,
@@ -220,52 +228,85 @@ sce <- calculate_qc_metrics(sce,
 # - 包含 nCount_RNA、nFeature_RNA、percent_mito 等指标
 message("质控指标计算结果（前几行元数据）：")
 head(sce@meta.data)
-#                    orig.ident nCount_RNA nFeature_RNA percent_mito
-# AAACCAAAGGCGCTTG-1  scFlowKit      10084         2847     9.044030
-# AAACCAAAGTAGGACG-1  scFlowKit       9336         3108     3.309769
-# AAACCATTCCAGCTAA-1  scFlowKit       7089         2751     3.879250
-# AAACCATTCCATCCGC-1  scFlowKit       6664         2421     6.692677
-# AAACCATTCGACCAGT-1  scFlowKit      11082         3244     2.752211
-# AAACCCTGTGATGAAT-1  scFlowKit      13111         3590     4.050034
+
 
 #-------------------------------------------------------------------------------
 
-# 步骤 2.2：可视化质控指标，帮助用户检查数据质量
-# - 绘制基因数、总 UMI 计数、线粒体比例的分布图（拼成一张图）
-# - 使用 VlnPlot 绘制小提琴图，保存为 output_dir/figures/qc_metrics_combined.png
-# - 使用 FeatureScatter 绘制散点图，保存为 output_dir/figures/qc_metrics_scatter_combined.png
-# - 可通过 pt.size 参数控制 VlnPlot 中点的大小（默认 0，不显示点）
+# 步骤 2.2：可视化质控指标
+#-------------------------------------------------------------------------------
+
+# 导入质控指标可视化模块
+source("Rutils/plot_qc_metrics.R")
+
+# - 可视化质控指标分布（小提琴图）和相关性（散点图）
+# - 指标包括 nCount_RNA、nFeature_RNA、percent_mito、log10_ratio_features_to_umi
+# - 按样本分组（sample 字段），展示不同样本的指标分布和相关性
+# - 设置阈值线：
+#   - nCount_RNA = 500（UMI 计数）
+#   - nFeature_RNA = 300（基因数）
+#   - percent_mito = 10（线粒体基因比例）
+#   - log10_ratio_features_to_umi = 0.8
+# - 点大小设置为 0.1，显示单个细胞的分布
+# - 小提琴图和散点图按 4 行排列（每行 1 个指标）
+# - 输出路径：
+#   - 小提琴图：results/figures/qc_metrics_combined.png
+#   - 散点图：results/figures/qc_metrics_scatter_combined.png
+#   - 综合散点图：results/figures/qc_metrics_comprehensive.png
+
 message("步骤 2.2：可视化质控指标...")
 plot_qc_metrics(sce,
                 output_dir = output_dir,
-                pt.size = 0)  # 默认不显示点，可调整为 0.1 等
+                pt.size = 0.1,  # 设置点大小为 0.1
+                umi_threshold = 500,
+                feature_threshold = 300,
+                mito_threshold = 10,
+                ratio_threshold = 0.8)
+
+# 打印输出路径
+message("质控指标图表已保存至：")
+message("- 小提琴图：", file.path(output_dir, "figures", "qc_metrics_combined.png"))
+message("- 散点图：", file.path(output_dir, "figures", "qc_metrics_scatter_combined.png"))
+message("- 综合散点图：", file.path(output_dir, "figures", "qc_metrics_comprehensive.png"))
 
 #-------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------
-# 步骤 2.3：过滤低质量细胞和基因
+# 步骤 2.3：过滤低质量细胞
 #-------------------------------------------------------------------------------
-# - 过滤标准：细胞基因数、总 UMI 计数、线粒体比例
-# - 可选过滤红细胞和核糖体基因比例（默认不启用）
-# - 用户可通过参数调整过滤阈值，例如：
-#   - min_umi = 500, max_umi = 15000 指定 UMI 计数范围
-#   - min_genes = 200, max_genes = 5000 指定基因数范围
-#   - max_mito = 10 指定最大线粒体基因比例
-message("步骤 2.3：过滤低质量细胞和基因...")
-sce <- filter_cells_genes(sce,
-                          min_umi = 500,           # 最小 UMI 计数
-                          max_umi = 15000,         # 最大 UMI 计数
-                          min_genes = 200,         # 最小基因数
-                          max_genes = 5000,        # 最大基因数
-                          max_mito = 10,           # 最大线粒体基因比例（百分比）
-                          filter_hb = FALSE,       # 不过滤红细胞基因比例
-                          max_hb = 5,              # 最大红细胞基因比例（未启用）
-                          filter_ribo = FALSE,     # 不过滤核糖体基因比例
-                          max_ribo = 50)           # 最大核糖体基因比例（未启用）
 
-# 输出过滤后的 Seurat 对象信息
-message("过滤后的 Seurat 对象基本信息：")
+# 导入过滤低质量细胞模块
+source("Rutils/filter_cells.R")
+
+# - 基于质控指标过滤低质量细胞
+# - 过滤条件：
+#   - nCount_RNA > 500（最小 UMI 计数）
+#   - nFeature_RNA > 300（最小基因数）
+#   - percent_mito < 10（最大线粒体基因比例）
+#   - log10_ratio_features_to_umi > 0.8（最小 log10 比值）
+# - 不设置最大 UMI 计数和最大基因数（默认 Inf）
+# - 不过滤红细胞和核糖体基因比例（默认 FALSE）
+
+message("步骤 2.3：过滤低质量细胞...")
+sce <- filter_cells(sce,
+                    min_umi = 500,
+                    max_umi = Inf,  # 不限制最大 UMI 计数
+                    min_genes = 300,
+                    max_genes = Inf,  # 不限制最大基因数
+                    max_mito = 10,
+                    min_ratio = 0.8,
+                    filter_hb = FALSE,
+                    filter_ribo = FALSE)
+
+# 查看过滤后的 Seurat 对象
+message("过滤后 Seurat 对象基本信息：")
 print(sce)
+
+# 保存过滤后的数据（中间点）
+message("保存过滤后的 Seurat 对象...")
+saveRDS(sce, file = file.path(processed_data_dir, "scFlowKit_filtered.rds"))
+message("已保存至：", file.path(processed_data_dir, "scFlowKit_filtered.rds"))
+
+#-------------------------------------------------------------------------------
 
 #-------------------------------------------------------------------------------
 
@@ -273,6 +314,12 @@ print(sce)
 #-------------------------------------------------------------------------------
 # 步骤 2.4：标准化和对数化数据
 #-------------------------------------------------------------------------------
+
+# 可选：从 .rds 文件加载预处理后的 Seurat 对象（跳过步骤 2.1 到 2.3）
+# - 加载路径：processed_data_dir/scFlowKit_filtered.rds
+# - 确保 processed_data_dir 已定义
+# sce <- readRDS(file.path(processed_data_dir, "scFlowKit_filtered.rds"))
+
 # - 标准化：将每个细胞的总表达量缩放到 10,000
 # - 对数化：log1p 变换，稳定数据分布
 # - 使用 Seurat 的 NormalizeData 函数，参数：
@@ -296,29 +343,10 @@ print(SeuratObject::Layers(sce))
 
 #-------------------------------------------------------------------------------
 
-#-------------------------------------------------------------------------------
-# 步骤 2.5：保存预处理数据（标准化后）
-#-------------------------------------------------------------------------------
-# - 保存预处理后的 Seurat 对象为 Rds 文件，路径：processed_data_dir/
-# - 文件名格式：dataset_name_normalized.rds
-# - 包含质控、过滤和标准化的结果
-# - 后续步骤（可变基因选择、缩放、降维、聚类等）会继续处理此数据
-message("步骤 2.5：保存预处理数据（标准化后）...")
-dir.create(processed_data_dir, recursive = TRUE, showWarnings = FALSE)
-saveRDS(sce, file = paste0(processed_data_dir, dataset_name, "_normalized.rds"))
-message("预处理数据已保存至：", paste0(processed_data_dir, dataset_name, "_normalized.rds"))
 
 #-------------------------------------------------------------------------------
-
-
+# 步骤 2.5：寻找可变基因（可选：从 .rds 文件加载数据）
 #-------------------------------------------------------------------------------
-# 步骤 2.6：寻找可变基因（可选：从 .rds 文件加载数据）
-#-------------------------------------------------------------------------------
-
-# 可选：从 .rds 文件加载预处理后的 Seurat 对象（跳过步骤 2.1 到 2.5）
-# - 加载路径：processed_data_dir/dataset_name_normalized.rds
-# - 确保 processed_data_dir 和 dataset_name 已定义
-# sce <- readRDS(file = paste0(processed_data_dir, dataset_name, "_normalized.rds"))
 
 # - 识别高变异基因（highly variable genes），用于后续降维和聚类
 # - 使用 Seurat 的 FindVariableFeatures 函数，参数：
@@ -327,7 +355,7 @@ message("预处理数据已保存至：", paste0(processed_data_dir, dataset_nam
 #   - verbose = TRUE 显示进度条
 # - 可变基因存储在 sce@assays$RNA@var.features 中
 # - 基因的均值和方差存储在 sce@assays$RNA@meta.data 中（Seurat 5.0 及以上版本）
-message("步骤 2.6：寻找可变基因...")
+message("步骤 2.5：寻找可变基因...")
 sce <- FindVariableFeatures(sce,
                             selection.method = "vst",
                             nfeatures = 2000,  # 选择 2000 个高变异基因
@@ -361,13 +389,13 @@ variable_feature_plot <- LabelPoints(plot = variable_feature_plot,
                                      repel = TRUE,  # 避免标签重叠
                                      xnudge = 0.3,  # 标签水平偏移
                                      ynudge = 0.05)  # 标签垂直偏移
-ggsave(file.path(output_dir, "figures/variable_features_plot.png"), variable_feature_plot, width = 8, height = 6)
+ggsave(file.path(output_dir, "figures/variable_features_plot.png"), plot = variable_feature_plot, width = 8, height = 6)
 
 #-------------------------------------------------------------------------------
 
 
 #-------------------------------------------------------------------------------
-# 步骤 2.7：细胞周期评分
+# 步骤 2.6：细胞周期评分
 #-------------------------------------------------------------------------------
 
 # - 使用 Seurat 的 CellCycleScoring 函数为细胞分配周期阶段
@@ -380,7 +408,7 @@ ggsave(file.path(output_dir, "figures/variable_features_plot.png"), variable_fea
 #   - G2M.Score > 0 且高于 S.Score：G2/M 期
 #   - 两者均低或接近：G1 期
 # - 放在 ScaleData 之前，以便 ScaleData 可以回归掉细胞周期影响
-message("步骤 2.7：细胞周期评分...")
+message("步骤 2.6：细胞周期评分...")
 message("S 期基因数量：", length(cc.genes$s.genes))
 message("G2/M 期基因数量：", length(cc.genes$g2m.genes))
 
@@ -397,8 +425,9 @@ print(head(sce@meta.data[, c("S.Score", "G2M.Score", "Phase")]))
 
 
 #-------------------------------------------------------------------------------
-# 步骤 2.8：数据缩放
+# 步骤 2.7：数据缩放（为双细胞检测准备）
 #-------------------------------------------------------------------------------
+
 # - 对基因进行中心化和缩放（零均值、单位方差）
 # - 使用 Seurat 的 ScaleData 函数，常用参数：
 #   - features 要缩放的基因，默认 NULL（使用高变异基因 VariableFeatures(sce)）
@@ -407,14 +436,12 @@ print(head(sce@meta.data[, c("S.Score", "G2M.Score", "Phase")]))
 #   - do.scale 是否进行缩放（默认 TRUE）
 #   - do.center 是否进行中心化（默认 TRUE）
 #   - verbose = TRUE 显示进度信息
-# - 内存允许时，建议使用全部基因（features = rownames(sce)），以保留所有基因信息
-# - 内存有限时，使用高变异基因（features = VariableFeatures(sce)），以减少计算量
-# - 函数默认：features = NULL 时，ScaleData 使用高变异基因
-# - 这里选择使用全部基因
+# - 这里选择使用高变异基因（features = VariableFeatures(sce)），以减少计算量
 # - 结果存储在 sce[["RNA"]]$scale.data 中
-message("步骤 2.8：数据缩放...")
+
+message("步骤 2.7：数据缩放（为双细胞检测准备）...")
 sce <- ScaleData(sce,
-                 features = rownames(sce),  # 使用全部基因（内存允许时推荐）
+                 features = VariableFeatures(sce),  # 使用高变异基因
                  vars.to.regress = NULL,  # 不回归任何变量（可设置为 c("S.Score", "G2M.Score")）
                  scale.max = 10,  # 缩放后表达量最大值
                  do.scale = TRUE,  # 进行缩放
@@ -424,8 +451,10 @@ sce <- ScaleData(sce,
 # 输出缩放后的 Seurat 对象信息
 message("缩放后的 Seurat 对象基本信息：")
 print(sce)
-# Active assay: RNA (25554 features, 2000 variable features)
-# 3 layers present: counts, data, scale.data
+
+# 打印 scale.data 的前 5 个基因和前 5 个细胞
+message("scale.data 前 5 个基因和前 5 个细胞：")
+print(sce[["RNA"]]$scale.data[1:5, 1:5])
 
 # 打印 scale.data 的前 5 个基因和前 5 个细胞
 message("scale.data 前 5 个基因和前 5 个细胞：")
@@ -435,7 +464,7 @@ print(sce[["RNA"]]$scale.data[1:5, 1:5])
 
 
 #-------------------------------------------------------------------------------
-# 步骤 2.9：降维（PCA）
+# 步骤 2.8：降维（PCA）
 #-------------------------------------------------------------------------------
 
 # - 使用 PCA 进行降维，基于高变异基因
@@ -444,7 +473,7 @@ print(sce[["RNA"]]$scale.data[1:5, 1:5])
 #   - npcs = 50 选择前 50 个主成分（可调整）
 #   - verbose = TRUE 显示进度信息
 # - 结果存储在 sce@reductions$pca 中
-message("步骤 2.9：降维（PCA）...")
+message("步骤 2.8：降维（PCA）...")
 sce <- RunPCA(sce,
               features = VariableFeatures(sce),  # 使用高变异基因（默认）
               npcs = 50,  # 计算前 50 个主成分
@@ -453,11 +482,6 @@ sce <- RunPCA(sce,
 # 输出降维后的 Seurat 对象信息
 message("降维后的 Seurat 对象基本信息：")
 print(sce)
-# An object of class Seurat 
-# 25554 features across 4413 samples within 1 assay 
-# Active assay: RNA (25554 features, 2000 variable features)
-# 3 layers present: counts, data, scale.data
-# 1 dimensional reduction calculated: pca
 
 # 可视化 PCA 结果
 # - 使用 DimPlot 绘制 PCA 散点图，展示 PC1 和 PC2 的分布
@@ -472,11 +496,6 @@ pca_plot <- DimPlot(sce,
                     repel = TRUE)  # 避免标签重叠
 ggsave(file.path(output_dir, "figures/pca_plot.png"), pca_plot, width = 8, height = 6)
 
-# 绘制 ElbowPlot 展示主成分的方差解释比例
-elbow_plot <- ElbowPlot(sce, 
-                        reduction = "pca",  # 使用 PCA 降维结果
-                        ndims = 50)  # 显示前 50 个主成分
-ggsave(file.path(output_dir, "figures/pca_elbow_plot.png"), elbow_plot, width = 8, height = 6)
 
 #-------------------------------------------------------------------------------
 
@@ -1011,3 +1030,77 @@ message("标志基因可视化已完成，图表保存至：", marker_viz_dir)
 #-------------------------------------------------------------------------------
 
 
+#-------------------------------------------------------------------------------
+# 步骤 4.3：细胞注释
+#-------------------------------------------------------------------------------
+
+# - 基于标志基因推断每个聚类的细胞类型
+# - 使用已知的细胞类型 marker 基因列表（手动定义或从数据库获取，如 CellMarker 或 PanglaoDB）
+# - 将细胞类型标签添加到 sce@meta.data 中
+message("步骤 4.3：细胞注释...")
+
+# 定义已知的细胞类型 marker 基因列表（示例，需根据实际数据集调整）
+# 这里以 PBMC 数据集为例，定义常见免疫细胞类型的 marker 基因
+cell_type_markers <- list(
+  "T_cells" = c("CD3D", "CD3E", "CD3G", "CD2"),  # T 细胞
+  "B_cells" = c("CD19", "CD20", "MS4A1", "CD79A"),  # B 细胞
+  "NK_cells" = c("NKG7", "GNLY", "KLRD1", "NCAM1"),  # NK 细胞
+  "Monocytes" = c("CD14", "FCGR3A", "LYZ", "CST3"),  # 单核细胞
+  "Dendritic_cells" = c("CD1C", "FCER1A", "HLA-DRA"),  # 树突状细胞
+  "Macrophages" = c("CD68", "CD163", "MARCO"),  # 巨噬细胞
+  "Neutrophils" = c("S100A8", "S100A9", "FCGR3B"),  # 中性粒细胞
+  "Platelets" = c("PPBP", "PF4", "ITGA2B")  # 血小板
+)
+
+# 初始化细胞类型列
+sce@meta.data$cell_type <- "Unknown"
+
+# 遍历每个聚类，基于标志基因推断细胞类型
+clusters <- unique(sce@meta.data$seurat_clusters)
+for (cluster in clusters) {
+  message("推断聚类 ", cluster, " 的细胞类型...")
+  # 获取当前聚类的 top 标志基因
+  cluster_markers <- top_markers[top_markers$cluster == cluster, "gene"]
+  
+  # 对比已知 marker 基因，推断细胞类型
+  cell_type <- "Unknown"
+  max_overlap <- 0
+  for (type in names(cell_type_markers)) {
+    markers <- cell_type_markers[[type]]
+    overlap <- length(intersect(cluster_markers, markers))
+    if (overlap > max_overlap) {
+      max_overlap <- overlap
+      cell_type <- type
+    }
+  }
+  
+  # 如果没有匹配到已知 marker，则标记为 Unknown
+  if (max_overlap == 0) {
+    message("聚类 ", cluster, " 未匹配到已知细胞类型，标记为 Unknown")
+  } else {
+    message("聚类 ", cluster, " 推断为：", cell_type, "（匹配基因数：", max_overlap, "）")
+  }
+  
+  # 将细胞类型标签添加到 sce@meta.data
+  sce@meta.data$cell_type[sce@meta.data$seurat_clusters == cluster] <- cell_type
+}
+
+# 输出细胞类型分布
+message("细胞类型分布：")
+print(table(sce@meta.data$cell_type))
+
+# 保存包含细胞类型注释的 Seurat 对象
+message("保存包含细胞类型注释的 Seurat 对象...")
+saveRDS(sce, file = paste0(processed_data_dir, dataset_name, "_annotated.rds"))
+message("已保存至：", paste0(processed_data_dir, dataset_name, "_annotated.rds"))
+
+# 可视化细胞类型在 UMAP 空间的分布
+message("可视化细胞类型在 UMAP 空间的分布...")
+p <- DimPlot(sce,
+             reduction = "umap",  # 使用 UMAP 降维结果
+             group.by = "cell_type",  # 按细胞类型分组
+             label = TRUE,  # 显示分组标签
+             repel = TRUE)  # 避免标签重叠
+ggsave(paste0(marker_viz_dir, "umap_cell_types.png"), p, width = 8, height = 6)
+
+#-------------------------------------------------------------------------------

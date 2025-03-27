@@ -236,7 +236,7 @@ plot_qc_metrics <- function(sce, output_dir, pt.size = 0) {
 
 #-------------------------------------------------------------------------------
 
-# filter_cells_genes: 过滤低质量细胞和基因
+# filter_cells_genes: 过滤低质量细胞
 # 参数:
 #   sce: Seurat 对象，包含单细胞 RNA-seq 数据
 #   min_umi: 最小 UMI 计数，默认 500
