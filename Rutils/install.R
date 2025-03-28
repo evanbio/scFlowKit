@@ -99,6 +99,8 @@ inst_pkg("stringr", source = "CRAN")
 inst_pkg("chris-mcginnis-ucsf/DoubletFinder", source = "GitHub")
 inst_pkg("MAST", source = "Bioconductor")
 inst_pkg("tidyversy",source = "CRAN")
+inst_pkg("glmGamPoi",source = "Bioconductor")
+inst_pkg("harmony", source = "CRAN")
 
 # 提示用户安装完成
 cat("scFlowKit 依赖包安装完成！")
