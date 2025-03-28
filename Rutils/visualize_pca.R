@@ -17,7 +17,7 @@
 #   height: 保存图片的高度，默认 10
 #   dpi: 图形分辨率，默认 300
 # 返回:
-#   无返回值，直接保存 DimPlot 和 ElbowPlot 到指定目录
+#   无返回值，直接保存 DimPlot、ElbowPlot 和 DimHeatmap到指定目录
 visualize_pca <- function(sce,
                           output_dir,
                           reduction = "pca",
@@ -80,8 +80,7 @@ visualize_pca <- function(sce,
                 group.by = "sample",
                 label = FALSE,
                 pt.size = 0.5) +
-    labs(title = "PCA by Sample") +
-    theme_minimal()
+    labs(title = "PCA by Sample") 
 
   # 第一行：按 group.by 分组
   message("绘制 DimPlot（按 ", group.by, " 分组）...")
@@ -91,8 +90,7 @@ visualize_pca <- function(sce,
                 group.by = group.by,
                 label = FALSE,
                 pt.size = 0.5) +
-    labs(title = paste0("PCA by ", group.by)) +
-    theme_minimal()
+    labs(title = paste0("PCA by ", group.by)) 
 
   # 第二行：按 group.by 分组，按 split.by 分面
   message("绘制 DimPlot（按 ", group.by, " 分组，按 ", split.by, " 分面）...")
@@ -103,8 +101,7 @@ visualize_pca <- function(sce,
                 split.by = split.by,
                 label = FALSE,
                 pt.size = 0.5) +
-    labs(title = paste0("PCA by ", group.by, ", Split by ", split.by)) +
-    theme_minimal()
+    labs(title = paste0("PCA by ", group.by, ", Split by ", split.by)) 
 
   # 使用 patchwork 组合图表（2 行布局）
   combined_plot <- (p1 | p2) / p3 + plot_layout(heights = c(1, 1))
@@ -136,6 +133,22 @@ visualize_pca <- function(sce,
          height = height,
          dpi = dpi)
   message("ElbowPlot 已保存至：", elbowplot_file)
-}
 
+  # 绘制 DimHeatmap（前 9 个 PCs）
+  message("绘制 DimHeatmap（前 9 个 PCs）...")
+  pca_dimheatmap <- DimHeatmap(sce,
+                               dims = 1:9,
+                               cells = 500,
+                               balanced = TRUE)
+
+  # 保存 DimHeatmap
+  dimheatmap_file <- file.path(figures_dir, "visualize_pca_dimheatmap.png")
+  ggsave(dimheatmap_file,
+         plot = pca_dimheatmap,
+         width = 12,
+         height = 10,
+         dpi = dpi)
+  message("DimHeatmap 已保存至：", dimheatmap_file)
+}
+  
 #-------------------------------------------------------------------------------

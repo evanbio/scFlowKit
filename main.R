@@ -731,7 +731,7 @@ saveRDS(sce_integrated, file = file.path(processed_data_dir, "scFlowKit_pca.rds"
 message("已保存至：", file.path(processed_data_dir, "scFlowKit_pca.rds"))
 
 #-------------------------------------------------------------------------------
-# 可视化 PCA 结果
+# 步骤 2.13：可视化和探索 PCA 结果
 #-------------------------------------------------------------------------------
 # - 使用 visualize_pca 函数可视化 PCA 降维结果，检查细胞周期相关分布
 # - 参数说明：
@@ -747,8 +747,11 @@ message("已保存至：", file.path(processed_data_dir, "scFlowKit_pca.rds"))
 # - 预期输出：
 #   - DimPlot：PCA 的二维散点图，按 Phase 分组和分面
 #   - ElbowPlot：主成分的方差贡献图
+#   - Heatmap：主成分的热图
 
-message("步骤 2.12（补充）：可视化 PCA 结果（细胞周期相关）...")
+
+# - 使用 visualize_pca 函数可视化 PCA 降维结果，检查细胞周期相关分布
+message("步骤 2.13：可视化和探索 PCA 结果...")
 
 # 导入 visualize_pca 模块
 source("Rutils/visualize_pca.R")
@@ -764,6 +767,45 @@ visualize_pca(sce_integrated,
               width = 10,
               height = 10,
               dpi = 300)
+
+# # 探索 PCA 结果：选择主成分（PCs）数量
+# message("探索 PCA 结果：选择主成分（PCs）数量...")
+
+# # 计算每个 PC 的方差贡献比例（百分比）
+# # - stdev：每个 PC 的标准差，表示变异大小
+# # - variance_ratio：每个 PC 的方差贡献比例（%）
+# variance <- sce_integrated[["pca"]]@stdev
+# total_variance <- sum(variance)
+# variance_ratio <- (variance / total_variance) * 100
+
+# # 计算累计方差贡献比例
+# # - cumulative_variance_ratio：前 k 个 PCs 的累计方差贡献（%）
+# cumulative_variance_ratio <- cumsum(variance_ratio)
+
+# # 指标 1：累计方差贡献 > 90% 且单 PC 贡献 < 5%
+# # - 找到第一个满足条件的 PC，确保涵盖大部分变异，同时避免噪声
+# pc_cutoff_1 <- which(cumulative_variance_ratio > 90 & variance_ratio < 5)[1]
+# message("指标 1：累计方差贡献 > 90% 且单 PC 贡献 < 5%，选择的 PC 数量：", pc_cutoff_1)
+
+# # 指标 2：方差贡献变化 > 0.1% 的最后一个 PC
+# # - 找到方差贡献下降速度显著减缓的 PC（肘部位置）
+# variance_diff <- variance_ratio[1:(length(variance_ratio) - 1)] - variance_ratio[2:length(variance_ratio)]
+# pc_cutoff_2 <- sort(which(variance_diff > 0.1), decreasing = TRUE)[1] + 1
+# message("指标 2：方差贡献变化 > 0.1% 的最后一个 PC，选择的 PC 数量：", pc_cutoff_2)
+
+# # 选择两个指标的最小值
+# # - 确保涵盖大部分变异，同时避免过多噪声
+# suggested_pcs <- min(pc_cutoff_1, pc_cutoff_2, na.rm = TRUE)
+# message("建议的 PC 数量（基于两个指标）：", suggested_pcs)
+
+# # 打印前 10 个 PCs 的 top 5 驱动基因
+# message("打印前 10 个 PCs 的 top 5 驱动基因：")
+# print(sce_integrated[["pca"]], dims = 1:10, nfeatures = 5)
+
+# # 最终选择：基于 SCTransform 的经验值，使用前 40 个 PCs
+# # - SCTransform 更准确，40 个 PCs 是合理的折中（保留足够变异，控制计算复杂度）
+# pcs_to_use <- 40
+# message("最终选择的 PC 数量（基于 SCTransform 经验值）：", pcs_to_use)
 #-------------------------------------------------------------------------------
 
 
@@ -806,19 +848,36 @@ print(names(sce_integrated@graphs))
 #   - algorithm = 1：使用原始 Louvain 算法
 #   - verbose = TRUE：显示进度信息
 # - 结果存储在 sce_integrated@meta.data$seurat_clusters 中
+
+# 定义多个 resolution 值
+resolutions <- c(0.4, 0.6, 0.8, 1.0, 1.4)
+message("测试的 resolution 值：", paste(resolutions, collapse = ", "))
+
 message("步骤 3.2：聚类...")
+# 运行 FindClusters，测试多个 resolution 值
+message("运行 FindClusters（测试多个 resolution 值）...")
 sce_integrated <- FindClusters(sce_integrated,
-                               resolution = 0.8,  # 分辨率，控制聚类数量
+                               resolution = resolutions,  # 分辨率，控制聚类数量
                                algorithm = 1,  # 使用原始 Louvain 算法
-                              verbose = TRUE)
+                               verbose = TRUE)
 
-metadata <- sce_integrated@meta.data
-# 输出聚类数量
-message("聚类数量：")
+# 输出每个 resolution 的聚类数量和分布
+for (res in resolutions) {
+  col_name <- paste0("integrated_snn_res.", res)  # 修正列名
+  message("Resolution ", res, " 聚类数量：")
+  print(length(unique(sce_integrated@meta.data[[col_name]])))
+  message("Resolution ", res, " 聚类分布：")
+  print(table(sce_integrated@meta.data[[col_name]]))
+}
+
+# 最终选择 resolution = 0.8（默认值）
+message("最终选择 resolution = 0.8 进行聚类...")
+sce_integrated@meta.data$seurat_clusters <- sce_integrated@meta.data[["integrated_snn_res.0.8"]]
+
+# 输出最终聚类数量和分布
+message("最终聚类数量（resolution = 0.8）：")
 print(length(unique(sce_integrated@meta.data$seurat_clusters)))
-
-# 查看聚类分布
-message("聚类分布：")
+message("最终聚类分布（resolution = 0.8）：")
 print(table(sce_integrated@meta.data$seurat_clusters))
 
 # 保存聚类后的 Seurat 对象（中间点）
@@ -895,6 +954,22 @@ ggsave(file.path(output_dir, "figures/tsne_plot_sample.png"), plot = tsne_plot_s
        width = 8, height = 6, dpi = 300)
 message("t-SNE 样本图已保存至：", file.path(output_dir, "figures/tsne_plot_sample.png"))
 
+# 按聚类分组，按样本分面
+tsne_plot_clusters_split <- DimPlot(sce_integrated,
+                                    reduction = "tsne",  # 使用 t-SNE 降维结果
+                                    group.by = "seurat_clusters",  # 按聚类分组
+                                    split.by = "sample",  # 按样本分面
+                                    label = TRUE,  # 显示分组标签
+                                    repel = TRUE) +  # 避免标签重叠
+  labs(title = "t-SNE Plot by Clusters, Split by Sample")
+
+# 保存 t-SNE 聚类分面图
+ggsave(file.path(output_dir, "figures/tsne_plot_clusters_split_by_sample.png"),
+       plot = tsne_plot_clusters_split,
+       width = 12,  # 增加宽度以适应分面
+       height = 6,
+       dpi = 300)
+message("t-SNE 聚类分面图已保存至：", file.path(output_dir, "figures/tsne_plot_clusters_split_by_sample.png"))  
 #-------------------------------------------------------------------------------
 
 
@@ -963,6 +1038,22 @@ ggsave(file.path(output_dir, "figures/umap_plot_sample.png"), plot = umap_plot_s
        width = 8, height = 6, dpi = 300)
 message("UMAP 样本图已保存至：", file.path(output_dir, "figures/umap_plot_sample.png"))
 
+# 按聚类分组，按样本分面
+umap_plot_clusters_split <- DimPlot(sce_integrated,
+                                    reduction = "umap",  # 使用 UMAP 降维结果
+                                    group.by = "seurat_clusters",  # 按聚类分组
+                                    split.by = "sample",  # 按样本分面
+                                    label = TRUE,  # 显示分组标签
+                                    repel = TRUE) +  # 避免标签重叠
+  labs(title = "UMAP Plot by Clusters, Split by Sample")
+
+# 保存 UMAP 聚类分面图
+ggsave(file.path(output_dir, "figures/umap_plot_clusters_split_by_sample.png"),
+       plot = umap_plot_clusters_split,
+       width = 12,  # 增加宽度以适应分面
+       height = 6,
+       dpi = 300)
+message("UMAP 聚类分面图已保存至：", file.path(output_dir, "figures/umap_plot_clusters_split_by_sample.png"))
 #-------------------------------------------------------------------------------
 
 
@@ -1005,6 +1096,8 @@ message("UMAP 降维坐标：", file.path(processed_data_dir, "scFlowKit_umap_em
 # 步骤 4.1：差异表达分析
 #-------------------------------------------------------------------------------
 
+# - SCTransform 标准化仅针对 3000 个变异最大的基因进行，主要用于降维和聚类
+# - 我们感兴趣的许多基因可能并不存在于这些数据中，因此差异分析时需要切换回RNA assay
 # - 寻找每个聚类的标志基因（marker genes）
 # - 使用 Seurat 的 FindAllMarkers 函数，常用参数：
 #   - test.use = "MAST" 使用 MAST 检验
@@ -1025,8 +1118,34 @@ message("UMAP 降维坐标：", file.path(processed_data_dir, "scFlowKit_umap_em
 
 message("步骤 4.1：差异表达分析...")
 
-# 确保活跃 assay 是 integrated（用于差异表达分析）
-DefaultAssay(sce_integrated) <- "integrated"
+# 切换到 RNA assay
+message("切换到 RNA assay...")
+DefaultAssay(sce_integrated) <- "RNA"
+message("切换后的 Seurat 对象信息：")
+print(sce_integrated)
+
+# 合并 RNA assay 的 layers
+message("合并 RNA assay 的 layers...")
+sce_integrated <- JoinLayers(sce_integrated, assay = "RNA")
+message("合并后的 Seurat 对象信息：")
+print(sce_integrated)
+
+# 重新标准化、选择高变基因和缩放数据（使用管道符）
+message("重新标准化、选择高变基因和缩放 RNA assay...")
+sce_integrated <- sce_integrated %>%
+  NormalizeData(assay = "RNA", 
+                normalization.method = "LogNormalize", 
+                scale.factor = 10000,  # 默认值
+                verbose = TRUE) %>%
+  FindVariableFeatures(assay = "RNA",
+                       selection.method = "vst",  # 使用 vst 方法
+                       nfeatures = 2000,  # 选择 2000 个高变基因
+                       verbose = TRUE) %>%
+  ScaleData(assay = "RNA",
+            features = rownames(sce_integrated),  # 使用所有基因（46517 个）
+            verbose = TRUE)
+message("标准化、高变基因选择和缩放后的 Seurat 对象信息：")
+print(sce_integrated)
 
 # 获取所有聚类标签
 clusters <- unique(sce_integrated@meta.data$seurat_clusters)
