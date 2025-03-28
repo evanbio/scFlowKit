@@ -1186,7 +1186,7 @@ message("Top 5 标志基因已保存至：", file.path(output_dir, "table", "scF
 for (cluster in unique(top_markers$cluster)) {
   message("聚类 ", cluster, "：")
   cluster_top <- top_markers[top_markers$cluster == cluster, ]
-  print(cluster_top[, c("gene", "p_val_adj", "avg_log2FC")])
+  print(cluster_top[, c("gene", "p_val_adj", "avg_log2FC", "pct.1", "pct.2")])
 }
 
 #-------------------------------------------------------------------------------
@@ -1204,8 +1204,8 @@ for (cluster in unique(top_markers$cluster)) {
 # - 可视化结果保存到子目录 results/figures/marker_visualization/
 message("步骤 4.2：可视化标志基因...")
 
-# 确保活跃 assay 是 integrated（用于可视化）
-DefaultAssay(sce_integrated) <- "integrated"
+# 确保活跃 assay 是 RNA（差异表达分析基于 RNA assay）
+DefaultAssay(sce_integrated) <- "RNA"
 
 # 读取 top 5 标志基因文件（如果从头运行，可以直接使用 top_markers）
 # top_markers <- read.csv(file.path(output_dir, "table", paste0(dataset_name, "_top5_markers.csv")))
@@ -1266,76 +1266,184 @@ message("标志基因可视化已完成，图表保存至：", marker_viz_dir)
 
 
 #-------------------------------------------------------------------------------
-# 步骤 4.3：细胞注释
+# 步骤 4.3：寻找保守的标志基因（考虑样本条件）
 #-------------------------------------------------------------------------------
 
-# - 基于标志基因推断每个聚类的细胞类型
-# - 使用已知的细胞类型 marker 基因列表（手动定义或从数据库获取，如 CellMarker 或 PanglaoDB）
-# - 将细胞类型标签添加到 sce@meta.data 中
-message("步骤 4.3：细胞注释...")
+# - 引入样本条件分组（例如 tumor vs normal），寻找保守的标志基因
+# - 使用 Seurat 的 FindConservedMarkers 函数，常用参数：
+#   - ident.1：目标聚类（例如 "0"）
+#   - grouping.var：条件分组变量（例如 "condition"）
+#   - test.use = "MAST"：使用 MAST 检验
+#   - only.pos = TRUE：仅返回上调的基因
+#   - min.pct = 0.25：基因在至少一组细胞中的最低表达比例
+#   - logfc.threshold = 0.5：基因的最小 log2 折叠变化阈值
+#   - verbose = TRUE：显示进度信息
+# - 结果为保守的标志基因列表，包含以下字段：
+#   - gene：基因名称
+#   - p_val：原始 p 值（每个条件分别计算）
+#   - avg_log2FC：平均 log2 折叠变化（每个条件分别计算）
+#   - pct.1：基因在目标聚类中的表达比例（每个条件分别计算）
+#   - pct.2：基因在其他聚类中的表达比例（每个条件分别计算）
+#   - p_val_adj：调整后的 p 值（Bonferroni 校正）
+#   - max_pval：所有条件中的最大 p 值
+#   - minimump_p_val：所有条件中的最小 p 值（综合 p 值）
+#   - cluster：基因所属的聚类
+message("步骤 4.3：寻找保守的标志基因（考虑样本条件）...")
 
-# 定义已知的细胞类型 marker 基因列表（示例，需根据实际数据集调整）
-# 这里以 PBMC 数据集为例，定义常见免疫细胞类型的 marker 基因
-cell_type_markers <- list(
-  "T_cells" = c("CD3D", "CD3E", "CD3G", "CD2"),  # T 细胞
-  "B_cells" = c("CD19", "CD20", "MS4A1", "CD79A"),  # B 细胞
-  "NK_cells" = c("NKG7", "GNLY", "KLRD1", "NCAM1"),  # NK 细胞
-  "Monocytes" = c("CD14", "FCGR3A", "LYZ", "CST3"),  # 单核细胞
-  "Dendritic_cells" = c("CD1C", "FCER1A", "HLA-DRA"),  # 树突状细胞
-  "Macrophages" = c("CD68", "CD163", "MARCO"),  # 巨噬细胞
-  "Neutrophils" = c("S100A8", "S100A9", "FCGR3B"),  # 中性粒细胞
-  "Platelets" = c("PPBP", "PF4", "ITGA2B")  # 血小板
-)
+# 确保活跃 assay 是 RNA（差异表达分析基于 RNA assay）
+DefaultAssay(sce_integrated) <- "RNA"
 
-# 初始化细胞类型列
-sce@meta.data$cell_type <- "Unknown"
+# 引入条件分组（假设 donor1 和 donor2 是 tumor，donor3 和 donor4 是 normal）
+message("引入条件分组（tumor vs normal）...")
+sce_integrated@meta.data$condition <- ifelse(sce_integrated@meta.data$sample %in% c("5k_pbmc_donor1", "5k_pbmc_donor2"), "condition1", "condition2")
+message("条件分组分布：")
+print(table(sce_integrated@meta.data$condition))
 
-# 遍历每个聚类，基于标志基因推断细胞类型
-clusters <- unique(sce@meta.data$seurat_clusters)
+# 获取所有聚类标签
+clusters <- unique(sce_integrated@meta.data$seurat_clusters)
+message("聚类数量：", length(clusters))
+
+# 使用 FindConservedMarkers 寻找每个聚类的保守标志基因
+message("运行 FindConservedMarkers 寻找保守标志基因...")
+conserved_markers_list <- list()
 for (cluster in clusters) {
-  message("推断聚类 ", cluster, " 的细胞类型...")
-  # 获取当前聚类的 top 标志基因
-  cluster_markers <- top_markers[top_markers$cluster == cluster, "gene"]
-  
-  # 对比已知 marker 基因，推断细胞类型
-  cell_type <- "Unknown"
-  max_overlap <- 0
-  for (type in names(cell_type_markers)) {
-    markers <- cell_type_markers[[type]]
-    overlap <- length(intersect(cluster_markers, markers))
-    if (overlap > max_overlap) {
-      max_overlap <- overlap
-      cell_type <- type
-    }
+  message("寻找聚类 ", cluster, " 的保守标志基因...")
+  markers <- FindConservedMarkers(sce_integrated,
+                                  ident.1 = cluster,  # 目标聚类
+                                  grouping.var = "condition",  # 按条件分组（tumor vs normal）
+                                  test.use = "MAST",  # 使用 MAST 检验
+                                  only.pos = TRUE,  # 仅返回上调的基因
+                                  min.pct = 0.25,  # 最低表达比例
+                                  logfc.threshold = 0.5,  # 最小 log2 折叠变化
+                                  verbose = TRUE)
+  if (nrow(markers) > 0) {
+    # 将行名（基因名）转换为 gene 列
+    markers <- markers %>%
+      tibble::rownames_to_column(var = "gene")
+    markers$cluster <- cluster
+    # 重置行名，避免合并时添加前缀
+    rownames(markers) <- NULL
+    conserved_markers_list[[as.character(cluster)]] <- markers
   }
-  
-  # 如果没有匹配到已知 marker，则标记为 Unknown
-  if (max_overlap == 0) {
-    message("聚类 ", cluster, " 未匹配到已知细胞类型，标记为 Unknown")
-  } else {
-    message("聚类 ", cluster, " 推断为：", cell_type, "（匹配基因数：", max_overlap, "）")
-  }
-  
-  # 将细胞类型标签添加到 sce@meta.data
-  sce@meta.data$cell_type[sce@meta.data$seurat_clusters == cluster] <- cell_type
 }
 
-# 输出细胞类型分布
-message("细胞类型分布：")
-print(table(sce@meta.data$cell_type))
+# 合并所有聚类的保守标志基因
+message("合并所有聚类的保守标志基因...")
+conserved_markers_df <- do.call(rbind, conserved_markers_list)
 
-# 保存包含细胞类型注释的 Seurat 对象
-message("保存包含细胞类型注释的 Seurat 对象...")
-saveRDS(sce, file = paste0(processed_data_dir, dataset_name, "_annotated.rds"))
-message("已保存至：", paste0(processed_data_dir, dataset_name, "_annotated.rds"))
+# 保存保守标志基因结果为 CSV 文件
+message("保存保守标志基因结果...")
+conserved_markers_file <- file.path(output_dir, "tables", "scFlowKit_conserved_markers.csv")
+write.csv(conserved_markers_df, file = conserved_markers_file, row.names = FALSE)
+message("保守标志基因结果已保存至：", conserved_markers_file)
 
-# 可视化细胞类型在 UMAP 空间的分布
-message("可视化细胞类型在 UMAP 空间的分布...")
-p <- DimPlot(sce,
-             reduction = "umap",  # 使用 UMAP 降维结果
-             group.by = "cell_type",  # 按细胞类型分组
-             label = TRUE,  # 显示分组标签
-             repel = TRUE)  # 避免标签重叠
-ggsave(paste0(marker_viz_dir, "umap_cell_types.png"), p, width = 8, height = 6)
+# 输出每个聚类的 top 5 保守标志基因
+message("提取每个聚类的 top 5 保守标志基因...")
+# 动态选择所有以 _avg_log2FC 结尾的列
+log2fc_cols <- grep("_avg_log2FC$", names(conserved_markers_df), value = TRUE)
+
+# 计算所有条件的 avg_log2FC 均值
+conserved_markers_df <- conserved_markers_df %>%
+  dplyr::mutate(mean_log2FC = rowMeans(dplyr::select(., all_of(log2fc_cols))))
+
+top_conserved_markers <- conserved_markers_df %>%
+  dplyr::group_by(cluster) %>%
+  dplyr::arrange(desc(mean_log2FC)) %>% # 按 avg_log2FC 均值降序排序
+  dplyr::slice_head(n = 5) %>%
+  dplyr::ungroup()
+
+# 保存 top 5 保守标志基因到文件
+top_conserved_markers_file <- file.path(output_dir, "tables", "scFlowKit_top5_conserved_markers.csv")
+write.csv(top_conserved_markers, file = top_conserved_markers_file, row.names = FALSE)
+message("Top 5 保守标志基因已保存至：", top_conserved_markers_file)
+
+# 按聚类分组打印 top 5 保守标志基因
+message("打印每个聚类的 top 5 保守标志基因：")
+# 动态选择打印字段：gene, minimump_p_val, 以及所有 _avg_log2FC 列
+print_cols <- c("gene", "minimump_p_val", log2fc_cols)
+for (cluster in unique(top_conserved_markers$cluster)) {
+  message("聚类 ", cluster, "：")
+  cluster_top <- top_conserved_markers[top_conserved_markers$cluster == cluster, ]
+  print(cluster_top[, print_cols])
+}
+
 
 #-------------------------------------------------------------------------------
+# 步骤 4.4：比较任意聚类的差异表达基因
+#-------------------------------------------------------------------------------
+
+# - 允许用户指定一个或多个聚类，比较它们之间的差异表达基因
+# - 比如聚类0，2，3均被确定为T细胞，可以通过进一步比较用于区分，找到更精细的亚类
+# - 或许能进一步区分，比如找到聚类0或许还主要表达初始T细胞的marker，而2，3更接近成熟T细胞
+# - 使用 Seurat 的 FindMarkers 函数，常用参数：
+#   - ident.1：第一个分组（例如 c("0", "1")）
+#   - ident.2：第二个分组（例如 c("2", "3")）
+#   - test.use = "MAST"：使用 MAST 检验
+#   - only.pos = TRUE：仅返回上调的基因
+#   - min.pct = 0.25：基因在至少一组细胞中的最低表达比例
+#   - logfc.threshold = 0.5：基因的最小 log2 折叠变化阈值
+#   - verbose = TRUE：显示进度信息
+# - 结果为差异表达基因列表，包含以下字段：
+#   - gene：基因名称
+#   - p_val：原始 p 值
+#   - avg_log2FC：平均 log2 折叠变化
+#   - pct.1：基因在 ident.1 中的表达比例
+#   - pct.2：基因在 ident.2 中的表达比例
+#   - p_val_adj：调整后的 p 值（Bonferroni 校正）
+
+message("步骤 4.4：比较任意聚类的差异表达基因...")
+
+# 确保活跃 assay 是 RNA（差异表达分析基于 RNA assay）
+DefaultAssay(sce_integrated) <- "RNA"
+
+# 获取所有聚类标签
+clusters <- unique(sce_integrated@meta.data$seurat_clusters)
+message("可用聚类：", paste(clusters, collapse = ", "))
+
+# 用户指定要比较的两个分组（支持一个或多个聚类）
+clusters1 <- c("0")  # 第一个分组（例如聚类 0 ）
+clusters2 <- c("2", "3")  # 第二个分组（例如聚类 2 和 3）
+message("比较的分组：", paste(clusters1, collapse = ","), " vs ", paste(clusters2, collapse = ","))
+
+# 使用 FindMarkers 比较两个分组
+message("运行 FindMarkers 比较分组 ", paste(clusters1, collapse = ","), " vs ", paste(clusters2, collapse = ","), "...")
+markers <- FindMarkers(sce_integrated,
+                       ident.1 = clusters1,  # 第一个分组
+                       ident.2 = clusters2,  # 第二个分组
+                       subset.ident = c(clusters1, clusters2),  # 限制分析的聚类
+                       test.use = "MAST",  # 使用 MAST 检验
+                       only.pos = TRUE,  # 仅返回上调的基因
+                       min.pct = 0.25,  # 最低表达比例
+                       logfc.threshold = 0.5,  # 最小 log2 折叠变化
+                       verbose = TRUE)
+
+# 将行名（基因名）转换为 gene 列
+markers <- markers %>%
+  tibble::rownames_to_column(var = "gene")
+
+# 保存差异表达基因结果为 CSV 文件
+message("保存差异表达基因结果...")
+comparison_name <- paste0("cluster_", paste(clusters1, collapse = "_"), "_vs_", paste(clusters2, collapse = "_"))
+markers_file <- file.path(output_dir, "tables", paste0("scFlowKit_markers_", comparison_name, ".csv"))
+write.csv(markers, file = markers_file, row.names = FALSE)
+message("差异表达基因结果已保存至：", markers_file)
+
+# 输出 top 5 差异表达基因（按 avg_log2FC 排序）
+message("提取 top 5 差异表达基因（按 avg_log2FC 排序）...")
+top_markers <- markers %>%
+  dplyr::arrange(desc(avg_log2FC)) %>%  # 按 avg_log2FC 降序排序
+  dplyr::slice_head(n = 5)
+
+# 保存 top 5 差异表达基因到文件
+top_markers_file <- file.path(output_dir, "tables", paste0("scFlowKit_top5_markers_", comparison_name, ".csv"))
+write.csv(top_markers, file = top_markers_file, row.names = FALSE)
+message("Top 5 差异表达基因已保存至：", top_markers_file)
+
+# 打印 top 5 差异表达基因
+message("打印 top 5 差异表达基因：")
+print_cols <- c("gene", "p_val_adj", "avg_log2FC", "pct.1", "pct.2")
+print(top_markers[, print_cols])
+
+# 步骤 4.5：（后续步骤）
+#-------------------------------------------------------------------------------
+# 继续后续分析
