@@ -5,18 +5,18 @@
 #-------------------------------------------------------------------------------
 #
 # 背景介绍:
-#   - 本函数读取单细胞 RNA 测序数据，支持 CellRanger 的 .mtx 文件夹、10x Genomics 的 .h5 文件和 AnnData 的 .h5ad 文件。
+#   - 本函数读取单细胞 RNA 测序数据，支持 CellRanger 的 .mtx 文件夹、10x Genomics 的 .h5 文件、AnnData 的 .h5ad 文件和 Loom 的 .loom 文件。
 #   - 对于 .mtx 文件夹，可选择手动读取（type = "mtx"）或 Seurat::Read10X（type = "10x"）。
 #
 # 参数说明:
-#   - input_path: 输入路径，可以是文件夹（.mtx 模式）或文件（.h5/.h5ad 模式）
-#   - type: 数据类型，默认根据 input_path 推断，可选 "mtx"、"10x"、"h5"、"h5ad"
+#   - input_path: 输入路径，可以是文件夹（.mtx 模式）或文件（.h5/.h5ad/.loom 模式）
+#   - type: 数据类型，默认根据 input_path 推断，可选 "mtx"、"10x"、"h5"、"h5ad"、"loom"
 #   - barcode_file: 条形码文件名（默认 "barcodes.tsv.gz"，仅 type = "mtx"）
 #   - feature_file: 特征文件名（默认 "features.tsv.gz"，仅 type = "mtx"）
 #   - matrix_file: 矩阵文件名（默认 "matrix.mtx.gz"，仅 type = "mtx"）
 #   - gene.column: Read10X 中特征文件的基因列（默认 2，即 Symbol，仅 type = "10x"）
 #   - cell.column: Read10X 中条形码文件的细胞列（默认 1，仅 type = "10x"）
-#   - unique.features: 是否ändig基因名唯一（默认 TRUE，仅 type = "10x"）
+#   - unique.features: 是否确保基因名唯一（默认 TRUE，仅 type = "10x"）
 #   - strip.suffix: 是否移除条形码后缀（如 -1，默认 FALSE，仅 type = "10x"）
 #
 # 返回值:
@@ -28,6 +28,7 @@
 #   - data.table (高效文件读取，type = "mtx")
 #   - rhdf5 (HDF5 文件读取，type = "h5")
 #   - zellkonverter (AnnData 文件读取，type = "h5ad")
+#   - LoomExperiment (Loom 文件读取，type = "loom")
 #   - Seurat (Read10X 函数，type = "10x")
 #   - cli (命令行交互提示)
 
@@ -57,6 +58,9 @@ read_sce <- function(input_path,
   if (!requireNamespace("zellkonverter", quietly = TRUE)) {
     stop("请先安装 zellkonverter 包：BiocManager::install('zellkonverter')", call. = FALSE)
   }
+  if (!requireNamespace("LoomExperiment", quietly = TRUE)) {
+    stop("请先安装 LoomExperiment 包：BiocManager::install('LoomExperiment')", call. = FALSE)
+  }
   if (!requireNamespace("cli", quietly = TRUE)) {
     stop("请先安装 cli 包：install.packages('cli')", call. = FALSE)
   }
@@ -65,6 +69,7 @@ read_sce <- function(input_path,
   library(data.table)
   library(rhdf5)
   library(zellkonverter)
+  library(LoomExperiment)
   library(cli)
   
   cli_h1("读取单细胞数据：{.path {input_path}}")
@@ -75,6 +80,8 @@ read_sce <- function(input_path,
       type <- "h5ad"
     } else if (grepl("\\.h5$", input_path)) {
       type <- "h5"
+    } else if (grepl("\\.loom$", input_path)) {
+      type <- "loom"
     } else {
       type <- "mtx"  # 默认文件夹为手动读取
     }
@@ -133,6 +140,23 @@ read_sce <- function(input_path,
       colData = data.frame(barcode = barcodes),
       rowData = features
     )
+    
+  } else if (type == "loom") {
+    # .loom 模式
+    cli_text("使用 LoomExperiment 读取 .loom 文件")
+    sce <- tryCatch(
+      import(input_path, type = "LoomExperiment"),
+      error = function(e) {
+        cli_alert_danger("读取 .loom 文件失败：{e$message}")
+        return(NULL)
+      }
+    )
+    if (is.null(sce)) return(invisible(NULL))
+    
+    # 确保 assay 名为 "counts"（Loom 默认可能是 "matrix"）
+    if (!"counts" %in% assayNames(sce)) {
+      assayNames(sce)[1] <- "counts"
+    }
     
   } else if (type == "10x") {
     # .mtx 文件夹（Read10X 模式）
@@ -231,7 +255,7 @@ read_sce <- function(input_path,
     )
     
   } else {
-    cli_alert_danger("不支持的 type 参数：{type}，可选值为 'mtx', '10x', 'h5', 'h5ad'")
+    cli_alert_danger("不支持的 type 参数：{type}，可选值为 'mtx', '10x', 'h5', 'h5ad', 'loom'")
     return(invisible(NULL))
   }
   
@@ -247,8 +271,6 @@ read_sce <- function(input_path,
 
 # # .mtx 文件夹（手动读取）
 # sce <- read_sce("/path/to/cellranger/output")
-# # 或明确指定
-# sce <- read_sce("/path/to/cellranger/output", type = "mtx")
 #
 # # .mtx 文件夹（用 Read10X，默认 Symbol）
 # sce <- read_sce("/path/to/cellranger/output", type = "10x")
@@ -261,6 +283,9 @@ read_sce <- function(input_path,
 #
 # # .h5ad 文件
 # sce <- read_sce("/path/to/data.h5ad")
+#
+# # .loom 文件
+# sce <- read_sce("/path/to/data.loom")
 #
 # # 检查结果
 # if (!is.null(sce)) {
