@@ -9,3 +9,6 @@ docs/
 
 # 忽略results文件夹
 results/
+
+# 忽略colors文件夹
+colors/

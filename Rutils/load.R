@@ -18,6 +18,9 @@ library(glmGamPoi)     # 加载 glmGamPoi 包，用于加速 SCTransform 的计�
 library(harmony)       # 加载 harmony 包，用于批次效应校正（Harmony 整合方法）
 library(jsonlite)
 library(EnhancedVolcano)
+library(SingleR)
+library(celldex)
+
 
 # 提示用户载入完成
 cat("scFlowKit 依赖包载入完成！\n")
