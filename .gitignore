@@ -1,14 +1,48 @@
-# 忽略 R 历史记录文件
+# RStudio
+.Rproj.user/
 .Rhistory
+.RData
+.Ruserdata
+.Rapp.history
 
-# 忽略data文件夹
-data/
+# R package build
+.Rcheck/
+*.Rproj
+*.Rhistory
+*.RData
+*.Rda
+*.RDS
+*.o
+*.so
+*.dll
 
-# 忽略docs文件夹
-docs/
+# Python (optional if using .ipynb or Python helpers)
+__pycache__/
+*.py[cod]
+*.ipynb_checkpoints
 
-# 忽略results文件夹
+# Data & results
+data/raw/
+data/processed/
+data/external/
 results/
+*.rds
+*.csv
+*.tsv
+*.h5
+*.loom
 
-# 忽略colors文件夹
-colors/
+# Figures and cache
+*.png
+*.pdf
+*.svg
+*.eps
+*.jpeg
+*.jpg
+*.html
+cache/
+*.log
+
+# System
+Thumbs.db
+desktop.ini
