@@ -1,8 +1,7 @@
-#-------------------------------------------------------------------------------
-# scFlowKit: Installation Script for Dependencies
+# Rutils/install.R
 #-------------------------------------------------------------------------------
 
-# 自定义函数：安装 R 包
+# scFlowKit: Installation Script for Dependencies
 #-------------------------------------------------------------------------------
 
 # inst_pkg: 安装 R 包（支持 CRAN、GitHub、Bioconductor、本地）
