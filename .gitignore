@@ -32,6 +32,12 @@ results/
 *.h5
 *.loom
 
+# Docs
+docs/5k_pbmc_donor1
+docs/5k_pbmc_donor2
+docs/5k_pbmc_donor3
+docs/5k_pbmc_donor4
+
 # Figures and cache
 *.png
 *.pdf
