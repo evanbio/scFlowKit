@@ -70,24 +70,41 @@ source("Rutils/global_config.R")
 # 导入数据加载模块
 source("Rutils/load_data.R")
 source("Rutils/sce2seu.R")
+source("scRNAutils/read_sce.R") 
 
-# 是否启用 SCE 模式（后续可作为参数化控制）
-use_sce <- FALSE  # ✅ 暂时手动控制，后续可支持自动判断或 CLI 参数
+# 模式控制（后续可参数化）
 
-# 如果启用 SCE 模式，则加载 .rds 文件并转换为 Seurat 对象
+use_sce <- FALSE  # ✅ 使用 SCE 模式（.rds/.h5ad/.loom/.h5/.mtx）
+
+sce_input_path <- "data/raw/your_sce_data.rds"  # 或者 .h5ad 等
+
 if (use_sce) {
-  # 设置 SCE 数据路径（建议手动指定）
-  sce_rds_path <- "data/processed/your_sce_data.rds"
-
+  #-----------------------------------------------
+  # 加载数据（SCE 模式）
+  #-----------------------------------------------
   cli_h1("🧬 步骤 1：加载 SingleCellExperiment 数据")
-  if (!file.exists(sce_rds_path)) {
+
+  if (!file.exists(sce_input_path)) {
     cli::cli_alert_danger("❌ 指定的 SCE 文件不存在：{sce_rds_path}")
     stop()
   }
 
-  # 读取并转换为 Seurat 对象
-  sce <- readRDS(sce_rds_path)
+  # 自动识别格式并读取（支持 rds/h5ad/loom/mtx/h5）
+  sce <- if (grepl("\\.rds$", sce_input_path)) {
+    cli_text("使用 readRDS 加载 .rds 文件")
+    readRDS(sce_input_path)
+  } else {
+    read_sce(sce_input_path)
+  }
+
+  if (is.null(sce)) {
+  cli_alert_danger("❌ SCE 读取失败，未能创建对象。")
+  stop()
+  }
+
+  # 转换为 Seurat 对象
   seu <- sce2seu(sce, counts_assay = "counts", project = "sce_import")
+
 } else {
   #-----------------------------------------------
   # 默认路径：使用 10X 格式（原始数据）

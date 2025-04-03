@@ -42,7 +42,7 @@ read_sce <- function(input_path,
                      unique.features = TRUE,
                      strip.suffix = FALSE) {
   
-  # 加载必要的包
+  # -------------------- 加载依赖包 --------------------
   if (!requireNamespace("SingleCellExperiment", quietly = TRUE)) {
     stop("请先安装 SingleCellExperiment 包：BiocManager::install('SingleCellExperiment')", call. = FALSE)
   }
@@ -64,6 +64,7 @@ read_sce <- function(input_path,
   if (!requireNamespace("cli", quietly = TRUE)) {
     stop("请先安装 cli 包：install.packages('cli')", call. = FALSE)
   }
+
   library(SingleCellExperiment)
   library(Matrix)
   library(data.table)
@@ -74,7 +75,7 @@ read_sce <- function(input_path,
   
   cli_h1("读取单细胞数据：{.path {input_path}}")
   
-  # 自动推断 type（如果未指定）
+  # -------------------- 自动推断数据类型 --------------------
   if (is.null(type)) {
     if (grepl("\\.h5ad$", input_path)) {
       type <- "h5ad"
@@ -89,6 +90,7 @@ read_sce <- function(input_path,
   cli_text("数据类型：{type}")
   
   # 根据 type 读取数据
+  # -------------------- 读取 .h5ad 文件 --------------------
   if (type == "h5ad") {
     cli_text("使用 zellkonverter 读取 .h5ad 文件")
     sce <- tryCatch(
@@ -99,7 +101,8 @@ read_sce <- function(input_path,
       }
     )
     if (is.null(sce)) return(invisible(NULL))
-    
+
+  # -------------------- 读取 .h5 文件（10X） --------------------  
   } else if (type == "h5") {
     cli_text("使用 rhdf5 读取 .h5 文件")
     data <- tryCatch(h5read(input_path, "matrix/data"), error = function(e) NULL)
@@ -142,7 +145,13 @@ read_sce <- function(input_path,
       colData = data.frame(barcode = barcodes),
       rowData = features
     )
-    
+
+    # ✅ 检查行名完整性
+    if (any(is.na(rownames(mat)) | rownames(mat) == "")) {
+      cli_alert_warning("⚠️ 检测到部分基因行名为空，请检查基因注释信息是否正确")
+    }
+
+  # -------------------- 读取 .loom 文件 --------------------  
   } else if (type == "loom") {
     cli_text("使用 LoomExperiment 读取 .loom 文件")
     sce <- tryCatch(
@@ -157,12 +166,14 @@ read_sce <- function(input_path,
     if (!"counts" %in% assayNames(sce)) {
       assayNames(sce)[1] <- "counts"
     }
-    
+
+  # -------------------- 读取 10X 文件夹（type = '10x'） --------------------  
   } else if (type == "10x") {
     cli_text("使用 Seurat::Read10X 读取 CellRanger 数据")
     if (!requireNamespace("Seurat", quietly = TRUE)) {
       stop("请先安装 Seurat 包：install.packages('Seurat')", call. = FALSE)
     }
+
     library(Seurat)
     
     mat <- tryCatch(
@@ -202,13 +213,19 @@ read_sce <- function(input_path,
     # 设置矩阵行名和列名（Read10X 已提供，但确保一致）
     rownames(mat) <- features$ensembl
     colnames(mat) <- barcodes
-    
+
+    # ✅ 检查行名完整性
+    if (any(is.na(rownames(mat)) | rownames(mat) == "")) {
+      cli_alert_warning("⚠️ 检测到部分基因行名为空，请检查基因注释信息是否正确")
+    }
+
     sce <- SingleCellExperiment(
       assays = list(counts = mat),
       colData = data.frame(barcode = barcodes),
       rowData = features
     )
-    
+
+  # -------------------- 读取手动 mtx 文件夹（type = 'mtx'） --------------------  
   } else if (type == "mtx") {
     cli_text("手动读取 CellRanger 数据")
     paths <- list(
@@ -256,7 +273,12 @@ read_sce <- function(input_path,
     # 设置矩阵行名和列名
     rownames(mat) <- features$ensembl
     colnames(mat) <- barcodes$barcode
-    
+
+    # ✅ 检查行名完整性
+    if (any(is.na(rownames(mat)) | rownames(mat) == "")) {
+      cli_alert_warning("⚠️ 检测到部分基因行名为空，请检查基因注释信息是否正确")
+    }
+
     sce <- SingleCellExperiment(
       assays = list(counts = mat),
       colData = data.frame(barcode = barcodes$barcode),
@@ -268,6 +290,7 @@ read_sce <- function(input_path,
     return(invisible(NULL))
   }
   
+  # -------------------- 返回结果 --------------------
   cli_alert_success(sprintf("成功创建 SingleCellExperiment 对象：%d 细胞 x %d 特征", 
                             ncol(sce), nrow(sce)))
   
