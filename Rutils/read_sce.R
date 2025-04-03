@@ -163,8 +163,8 @@ read_sce <- function(input_path,
     )
     if (is.null(sce)) return(invisible(NULL))
     
-    if (!"counts" %in% assayNames(sce)) {
-      assayNames(sce)[1] <- "counts"
+    if (!"counts" %in% SummarizedExperiment::assayNames(sce)) {
+      SummarizedExperiment::assayNames(sce)[1] <- "counts"
     }
 
   # -------------------- 读取 10X 文件夹（type = '10x'） --------------------  
