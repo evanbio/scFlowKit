@@ -4,8 +4,6 @@
 # scFlowKit: Load Single-Cell RNA-seq Data
 #-------------------------------------------------------------------------------
 
-# 自定义函数：加载单细胞 RNA-seq 数据
-#-------------------------------------------------------------------------------
 
 # load_data: 加载 10X Genomics 格式的单细胞 RNA-seq 数据
 # 参数:
@@ -25,6 +23,11 @@ load_data <- function(base_path, dataset_name,
                       unique_features = TRUE, strip_suffix = FALSE,
                       min_cells = 3, min_features = 40, 
                       project = "scFlowKit", assay = "RNA") {
+  
+  # 使用 cli 美化输出
+  library(cli)
+
+  # ---------------- 参数检查 ----------------
   # 验证输入参数是否为字符类型
   if (!is.character(base_path) || !is.character(dataset_name)) {
     stop("参数 'base_path' 和 'dataset_name' 必须为字符类型！", call. = FALSE)
@@ -62,16 +65,19 @@ load_data <- function(base_path, dataset_name,
     stop("参数 'assay' 必须为字符类型！", call. = FALSE)
   }
 
+  # ---------------- 路径与数据读取 ----------------
   # 拼接完整数据路径
   data_path <- file.path(base_path, dataset_name)
 
   # 检查数据路径是否存在
   if (!dir.exists(data_path)) {
-    stop("数据路径不存在: ", data_path, call. = FALSE)
+    cli_alert_danger("数据路径不存在：{data_path}")
+    stop()
   }
-
-  # 提示用户正在加载数据
-  message("正在加载 10X Genomics 数据: [", data_path, "]")
+  
+  cli_h2("📥 加载数据集 {.strong {dataset_name}}")
+  cli_text("📂 路径：{data_path}")
+  cli_text("🧪 过滤参数：min.cells = {min_cells}, min.features = {min_features}")
 
   # 加载 10X Genomics 数据
   data <- Seurat::Read10X(data.dir = data_path,
@@ -79,8 +85,8 @@ load_data <- function(base_path, dataset_name,
                           cell.column = cell_column,
                           unique.features = unique_features,
                           strip.suffix = strip_suffix)
-
-  # 创建 Seurat 对象
+  
+  # ---------------- 创建 Seurat 对象 ----------------
   seurat_obj <- Seurat::CreateSeuratObject(counts = data,
                                            min.cells = min_cells,
                                            min.features = min_features,
@@ -88,8 +94,7 @@ load_data <- function(base_path, dataset_name,
                                            assay = assay)
 
   # 提示用户加载完成
-  message("数据加载完成！")
-
+  cli_alert_success("✅ 加载完成：共 {ncol(seurat_obj)} 个细胞，{nrow(seurat_obj)} 个基因")
   return(seurat_obj)
 }
 
