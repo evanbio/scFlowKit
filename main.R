@@ -69,56 +69,78 @@ source("Rutils/global_config.R")
 
 # 导入数据加载模块
 source("Rutils/load_data.R")
+source("Rutils/sce2seu.R")
 
-# 指定数据集名称（用户可根据实际数据集调整）
-# - 支持单个整合样本（例如 "5k_pbmc_combined"）
-# - 支持多个样本（例如 c("5k_pbmc_donor1", "5k_pbmc_donor2", "5k_pbmc_donor3", "5k_pbmc_donor4")）
-# - 或者使用 list.files 自动读取数据目录下的所有样本：dataset_name <- list.files(path = data_path, pattern = "5k_pbmc_donor[0-9]+", full.names = FALSE)
-dataset_name <- c("5k_pbmc_donor1", "5k_pbmc_donor2", "5k_pbmc_donor3", "5k_pbmc_donor4")
+# 是否启用 SCE 模式（后续可作为参数化控制）
+use_sce <- FALSE  # ✅ 暂时手动控制，后续可支持自动判断或 CLI 参数
 
-# 加载数据
-message("步骤 1：正在加载单细胞 RNA-seq 数据...")
-if (length(dataset_name) == 1) {
-  # 单个整合样本，直接加载
-  sce <- load_data(base_path = data_path, 
-                   dataset_name = dataset_name,
-                   min_cells = 10,         # 基因至少在 10 个细胞中表达
-                   min_features = 40,      # 细胞至少表达 40 个基因
-                   project = dataset_name,  # Seurat 对象项目名称
-                   assay = "RNA")          # 测序类型
-} else {
-  # 多个样本，分别加载并整合
-  sce_list <- list()
-  for (ds in dataset_name) {
-    message("加载样本：", ds, "...")
-    sce_tmp <- load_data(base_path = data_path, 
-                         dataset_name = ds,
-                         min_cells = 10,
-                         min_features = 40,
-                         project = ds,  # 使用当前样本名作为 Seurat 对象的 project 名称
-                         assay = "RNA")
-    # 添加样本信息（sample information）
-    sce_tmp$sample <- ds
-    sce_list[[ds]] <- sce_tmp
+# 如果启用 SCE 模式，则加载 .rds 文件并转换为 Seurat 对象
+if (use_sce) {
+  # 设置 SCE 数据路径（建议手动指定）
+  sce_rds_path <- "data/processed/your_sce_data.rds"
+
+  cli_h1("🧬 步骤 1：加载 SingleCellExperiment 数据")
+  if (!file.exists(sce_rds_path)) {
+    cli::cli_alert_danger("❌ 指定的 SCE 文件不存在：{sce_rds_path}")
+    stop()
   }
+
+  # 读取并转换为 Seurat 对象
+  sce <- readRDS(sce_rds_path)
+  seu <- sce2seu(sce, counts_assay = "counts", project = "sce_import")
+} else {
+  #-----------------------------------------------
+  # 默认路径：使用 10X 格式（原始数据）
+  #-----------------------------------------------
   
-  # 整合多个样本
-  message("整合多个样本...")
-  sce <- merge(sce_list[[1]], y = sce_list[-1], add.cell.id = names(sce_list))
-  
-  # 合并多个count层
-  # - add.cell.id 生成了多个层（counts.5k_pbmc_donor1, counts.5k_pbmc_donor2 等）
-  # - JoinLayers 将这些层合并为一个 counts 层
-  message("合并 assays 下的层...")
-  sce <- JoinLayers(sce)
+  # 指定数据集名称（用户可根据实际数据集调整）
+  # - 支持单个整合样本（例如 "5k_pbmc_combined"）
+  # - 支持多个样本（例如 c("5k_pbmc_donor1", "5k_pbmc_donor2", "5k_pbmc_donor3", "5k_pbmc_donor4")）
+  # - 或者使用 list.files 自动读取数据目录下的所有样本：dataset_name <- list.files(path = data_path, pattern = "5k_pbmc_donor[0-9]+", full.names = FALSE)
+
+  # 加载数据
+  cli_h1("🧬 步骤 1：加载单细胞 RNA-seq 数据（10X）")
+
+  dataset_name <- c("5k_pbmc_donor1", "5k_pbmc_donor2", "5k_pbmc_donor3", "5k_pbmc_donor4")
+  if (length(dataset_name) == 1) {
+    # 单个整合样本，直接加载
+    seu <- load_data(base_path = data_path, 
+                    dataset_name = dataset_name,
+                    min_cells = 10,         # 基因至少在 10 个细胞中表达
+                    min_features = 40,      # 细胞至少表达 40 个基因
+                    project = dataset_name,  # Seurat 对象项目名称
+                    assay = "RNA")          # 测序类型
+  } else {
+    # 多个样本，分别加载并整合
+    seu_list <- list()
+    for (ds in dataset_name) {
+      cli_alert_info("📂 加载样本：{ds} ...")
+      seu_tmp <- load_data(base_path = data_path, 
+                          dataset_name = ds,
+                          min_cells = 10,
+                          min_features = 40,
+                          project = ds,  # 使用当前样本名作为 Seurat 对象的 project 名称
+                          assay = "RNA")
+      # 添加样本信息（sample information）
+      seu_tmp$sample <- ds
+      seu_list[[ds]] <- seu_tmp
+    }
+    
+    # 整合多个样本
+    cli_alert_info("🧪 整合多个样本中 ...")
+    seu <- merge(seu_list[[1]], y = seu_list[-1], add.cell.id = names(seu_list))
+    
+    # 合并多个count层
+    # - add.cell.id 生成了多个层（counts.5k_pbmc_donor1, counts.5k_pbmc_donor2 等）
+    # - JoinLayers 将这些层合并为一个 counts 层
+    cli_alert_info("🧼 合并 assays 下的层（JoinLayers）...")
+    seu <- JoinLayers(seu)
+  }
 }
 
-
 # 输出基本信息，确认加载成功
-message("📦 Seurat 对象已成功创建，基本信息如下：")
-print(sce)
-
-#-------------------------------------------------------------------------------
+cli_alert_success("✅ Seurat 对象已成功创建，基本信息如下：")
+print(seu)
 
 #-------------------------------------------------------------------------------
 
