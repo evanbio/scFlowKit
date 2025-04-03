@@ -1,1 +1,0 @@
-message("UMAP 降维坐标：", file.path(processed_data_dir, "scFlowKit_umap_embeddings.csv"))

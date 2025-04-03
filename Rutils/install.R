@@ -32,11 +32,11 @@ inst_pkg <- function(pkg = NULL,
   # 对于 CRAN/GitHub/Bioconductor，若包已安装则跳过
   # （本地安装可能不知道包名，故不做此判断或仅在 pkg 不为空时判断）
   if (!is.null(pkg) && source != "local") {
-    for (p in pkg) {
-      if (requireNamespace(p, quietly = TRUE)) {
-        message("包 [", p, "] 已安装，跳过安装。")
-        return(invisible(NULL))
-      }
+    # 提取包名（对于 GitHub 包，提取 user/repo 中的 repo 部分）
+    pkg_name <- if (source == "GitHub") basename(pkg) else pkg
+    if (requireNamespace(pkg_name, quietly = TRUE)) {
+      message("包 [", pkg_name, "] 已安装，跳过安装。")
+      return(invisible(NULL))
     }
   }
   

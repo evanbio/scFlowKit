@@ -90,7 +90,6 @@ read_sce <- function(input_path,
   
   # 根据 type 读取数据
   if (type == "h5ad") {
-    # .h5ad 模式
     cli_text("使用 zellkonverter 读取 .h5ad 文件")
     sce <- tryCatch(
       zellkonverter::readH5AD(input_path),
@@ -102,7 +101,6 @@ read_sce <- function(input_path,
     if (is.null(sce)) return(invisible(NULL))
     
   } else if (type == "h5") {
-    # .h5 模式
     cli_text("使用 rhdf5 读取 .h5 文件")
     data <- tryCatch(h5read(input_path, "matrix/data"), error = function(e) NULL)
     indices <- tryCatch(h5read(input_path, "matrix/indices"), error = function(e) NULL)
@@ -135,6 +133,10 @@ read_sce <- function(input_path,
       return(invisible(NULL))
     }
     
+    # 设置矩阵行名和列名
+    rownames(mat) <- features$ensembl
+    colnames(mat) <- barcodes
+    
     sce <- SingleCellExperiment(
       assays = list(counts = mat),
       colData = data.frame(barcode = barcodes),
@@ -142,7 +144,6 @@ read_sce <- function(input_path,
     )
     
   } else if (type == "loom") {
-    # .loom 模式
     cli_text("使用 LoomExperiment 读取 .loom 文件")
     sce <- tryCatch(
       import(input_path, type = "LoomExperiment"),
@@ -153,13 +154,11 @@ read_sce <- function(input_path,
     )
     if (is.null(sce)) return(invisible(NULL))
     
-    # 确保 assay 名为 "counts"（Loom 默认可能是 "matrix"）
     if (!"counts" %in% assayNames(sce)) {
       assayNames(sce)[1] <- "counts"
     }
     
   } else if (type == "10x") {
-    # .mtx 文件夹（Read10X 模式）
     cli_text("使用 Seurat::Read10X 读取 CellRanger 数据")
     if (!requireNamespace("Seurat", quietly = TRUE)) {
       stop("请先安装 Seurat 包：install.packages('Seurat')", call. = FALSE)
@@ -179,6 +178,7 @@ read_sce <- function(input_path,
         return(NULL)
       }
     )
+    
     if (is.null(mat)) return(invisible(NULL))
     
     barcodes <- colnames(mat)
@@ -189,7 +189,6 @@ read_sce <- function(input_path,
       colnames(features) <- "symbol"
     }
     
-    # 尝试补充完整特征信息
     feature_path <- file.path(input_path, feature_file)
     if (file.exists(feature_path)) {
       features_full <- tryCatch(
@@ -200,6 +199,10 @@ read_sce <- function(input_path,
       if (!is.null(features_full)) features <- features_full
     }
     
+    # 设置矩阵行名和列名（Read10X 已提供，但确保一致）
+    rownames(mat) <- features$ensembl
+    colnames(mat) <- barcodes
+    
     sce <- SingleCellExperiment(
       assays = list(counts = mat),
       colData = data.frame(barcode = barcodes),
@@ -207,7 +210,6 @@ read_sce <- function(input_path,
     )
     
   } else if (type == "mtx") {
-    # .mtx 文件夹（手动读取）
     cli_text("手动读取 CellRanger 数据")
     paths <- list(
       barcodes = file.path(input_path, barcode_file),
@@ -247,6 +249,13 @@ read_sce <- function(input_path,
       cli_alert_danger("矩阵维度不匹配：{nrow(mat)} x {ncol(mat)} vs {nrow(features)} x {nrow(barcodes)}")
       return(invisible(NULL))
     }
+    
+    # 转换为 dgCMatrix
+    mat <- as(mat, "dgCMatrix")
+    
+    # 设置矩阵行名和列名
+    rownames(mat) <- features$ensembl
+    colnames(mat) <- barcodes$barcode
     
     sce <- SingleCellExperiment(
       assays = list(counts = mat),
@@ -289,8 +298,10 @@ read_sce <- function(input_path,
 #
 # # 检查结果
 # if (!is.null(sce)) {
-#   print(dim(counts(sce)))  # 矩阵维度
-#   head(colData(sce))       # 条形码
-#   head(rowData(sce))       # 特征信息
+#   print(sce)              # 查看 SCE 结构
+#   head(rownames(sce))     # 检查行名
+#   head(colnames(sce))     # 检查列名
+#   head(colData(sce))      # 检查 colData
+#   head(rowData(sce))      # 检查 rowData
 # }
-#-------------------------------------------------------------------------------```
+#-------------------------------------------------------------------------------
