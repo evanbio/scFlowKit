@@ -297,6 +297,8 @@ cli::cli_text("📌 综合图：{file.path(output_dir, 'figures', 'qc_metrics_co
 # 导入过滤低质量细胞模块
 source("Rutils/filter_cells.R")
 
+#-------------------------------------------------------------------------------
+# 说明：
 # - 基于质控指标过滤低质量细胞
 # - 过滤条件：
 #   - nCount_RNA > 500（最小 UMI 计数）
@@ -306,25 +308,29 @@ source("Rutils/filter_cells.R")
 # - 不设置最大 UMI 计数和最大基因数（默认 Inf）
 # - 不过滤红细胞和核糖体基因比例（默认 FALSE）
 
-message("步骤 2.3：过滤低质量细胞...")
-sce <- filter_cells(sce,
-                    min_umi = 500,
-                    max_umi = Inf,  # 不限制最大 UMI 计数
-                    min_genes = 300,
-                    max_genes = Inf,  # 不限制最大基因数
-                    max_mito = 10,
-                    min_ratio = 0.8,
-                    filter_hb = FALSE,
-                    filter_ribo = FALSE)
+cli::cli_h2("🧹 步骤 2.3：过滤低质量细胞")
 
-# 查看过滤后的 Seurat 对象
-message("过滤后 Seurat 对象基本信息：")
-print(sce)
+# 应用过滤函数
+seu <- filter_cells(
+  seu,
+  min_umi    = 500,
+  max_umi    = Inf,
+  min_genes  = 300,
+  max_genes  = Inf,
+  max_mito   = 10,
+  min_ratio  = 0.8,
+  filter_hb  = FALSE,
+  filter_ribo = FALSE
+)
+
+# 查看过滤后 Seurat 对象信息
+cli::cli_text("📦 过滤后对象概览：")
+print(seu)
 
 # 保存过滤后的数据（中间点）
-message("保存过滤后的 Seurat 对象...")
-saveRDS(sce, file = file.path(processed_data_dir, "scFlowKit_filtered.rds"))
-message("已保存至：", file.path(processed_data_dir, "scFlowKit_filtered.rds"))
+cli::cli_text("💾 保存过滤后的 Seurat 对象至文件：")
+saveRDS(seu, file = file.path(processed_data_dir, "scFlowKit_filtered.rds"))
+cli::cli_alert_success("✅ 已保存：{file.path(processed_data_dir, 'scFlowKit_filtered.rds')}")
 
 #-------------------------------------------------------------------------------
 

@@ -4,7 +4,14 @@
 # scFlowKit: Filter Low-Quality Cells for Single-Cell RNA-seq Data
 #-------------------------------------------------------------------------------
 
+# 细胞过滤背景说明：
+# - 本函数用于根据质控指标过滤低质量细胞，是单细胞分析预处理中的关键步骤。
+# - 支持常规指标过滤（UMI 计数、基因数、线粒体比例、表达复杂性）；
+# - 可选支持红细胞污染和核糖体比例过滤（如需提前通过 calculate_qc_metrics 计算）。
+
+#-------------------------------------------------------------------------------
 # filter_cells: 过滤低质量细胞
+#-------------------------------------------------------------------------------
 # 参数:
 #   sce: Seurat 对象，包含单细胞 RNA-seq 数据
 #   min_umi: 最小 UMI 计数，默认 500
@@ -17,7 +24,12 @@
 #   max_hb: 最大红细胞基因比例（百分比），默认 5（仅当 filter_hb = TRUE 时生效）
 #   filter_ribo: 是否过滤核糖体基因比例高的细胞，默认 FALSE
 #   max_ribo: 最大核糖体基因比例（百分比），默认 50（仅当 filter_ribo = TRUE 时生效）
-filter_cells <- function(sce, 
+
+# 返回值：
+#   - 返回过滤后的 Seurat 对象（seu）
+#--------------------------------------------------------------------------------
+
+filter_cells <- function(seu, 
                          min_umi = 500, 
                          max_umi = Inf, 
                          min_genes = 200, 
@@ -28,6 +40,8 @@ filter_cells <- function(sce,
                          max_hb = 5,
                          filter_ribo = FALSE, 
                          max_ribo = 50) {
+
+  #------------------------------ 参数检查 ------------------------------                          
   # 验证输入参数是否为 Seurat 对象
   if (!inherits(sce, "Seurat")) {
     stop("参数 'sce' 必须为 Seurat 对象！", call. = FALSE)
@@ -69,7 +83,7 @@ filter_cells <- function(sce,
     stop("参数 'max_ribo' 必须为非负数值！", call. = FALSE)
   }
 
-  # 验证元数据是否包含必要的质控指标
+  #------------------------------ 检查质控指标列 ------------------------------
   required_metrics <- c("nCount_RNA", "nFeature_RNA", "percent_mito", "log10_ratio_features_to_umi")
   missing_metrics <- setdiff(required_metrics, colnames(sce@meta.data))
   if (length(missing_metrics) > 0) {
@@ -86,8 +100,8 @@ filter_cells <- function(sce,
     stop("元数据缺少 'percent_ribo' 指标，请在 calculate_qc_metrics 中设置 calculate_ribo = TRUE！", call. = FALSE)
   }
 
-  # 提示用户正在过滤数据
-  message("正在过滤低质量细胞...")
+  #------------------------------ 开始过滤 ------------------------------
+  cli::cli_h2("🧹 正在过滤低质量细胞")
 
   # 构建过滤条件，使用 sprintf 格式化字符串
   subset_conditions <- list(
@@ -113,8 +127,7 @@ filter_cells <- function(sce,
   # 过滤低质量细胞
   sce <- subset(sce, subset = !!rlang::parse_expr(subset_expr))
 
-  # 提示用户过滤完成
-  message("低质量细胞过滤完成！")
+  cli::cli_alert_success("✅ 过滤完成，共保留 {ncol(seu)} 个细胞")
 
   return(sce)
 }
