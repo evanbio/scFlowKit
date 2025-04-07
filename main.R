@@ -215,69 +215,80 @@ explore_seurat(seu, explore_mode = explore_mode)
 # 步骤 2：数据预处理和质控
 #-------------------------------------------------------------------------------
 
+#-------------------------------------------------------------------------------
 # 步骤 2.1：计算质控指标
 #-------------------------------------------------------------------------------
 
 # 导入质控指标计算模块
-source("Rutils/calculate_qc_metrics.R") 
-
-# - 计算线粒体基因比例、总 UMI 计数、基因数
-# - 可选计算红细胞和核糖体基因比例（默认不计算）
-# - 可通过 hb_genes 和 ribo_genes 参数传入自定义基因集，例如：
-#   - hb_genes = c("HBB", "HBA1", "HBA2") 指定红细胞基因
-#   - ribo_genes = c("RPL5", "RPS6", "RPL10") 指定核糖体基因
-# - 打印随机取样的 10 个基因名，用户可以检查当前基因名的大小写
-
-message("步骤 2.1：计算质控指标...")
-sce <- calculate_qc_metrics(sce,
-                            calculate_hb = FALSE,    # 不计算红细胞基因比例
-                            calculate_ribo = FALSE)  # 不计算核糖体基因比例
-
-# 查看计算后的元数据
-# - 包含 nCount_RNA、nFeature_RNA、percent_mito 等指标
-message("质控指标计算结果（前几行元数据）：")
-head(sce@meta.data)
-
+source("Rutils/calculate_qc_metrics.R")
 
 #-------------------------------------------------------------------------------
+# 说明：
+# - 自动计算以下质控指标：
+#     - nCount_RNA（每个细胞的总 UMI 计数）
+#     - nFeature_RNA（每个细胞表达的基因数）
+#     - percent_mito（线粒体基因比例，基于 "^MT-"）
+#     - log10_ratio_features_to_umi（表达复杂度）
+# - 可选启用：
+#     - percent_hb：红细胞基因比例（calculate_hb = TRUE）
+#     - percent_ribo：核糖体基因比例（calculate_ribo = TRUE）
+# - 支持自定义基因集（hb_genes, ribo_genes）
+# - 会随机打印 10 个基因名，供大小写格式检查
+#-------------------------------------------------------------------------------
 
+cli::cli_h1("🧪 步骤 2.1：计算质控指标")
+
+# 计算质控指标（默认不计算红细胞 / 核糖体比例）
+seu <- calculate_qc_metrics(seu,
+                            calculate_hb = FALSE,     # ❌ 不计算 percent_hb
+                            calculate_ribo = FALSE)   # ❌ 不计算 percent_ribo
+
+# 查看计算结果（Seurat 元数据前几行）
+cli::cli_h2("📋 质控指标计算结果（前几行）")
+print(head(seu@meta.data))
+
+#-------------------------------------------------------------------------------
 # 步骤 2.2：可视化质控指标
 #-------------------------------------------------------------------------------
 
 # 导入质控指标可视化模块
 source("Rutils/plot_qc_metrics.R")
 
-# - 可视化质控指标分布（小提琴图）和相关性（散点图）
-# - 指标包括 nCount_RNA、nFeature_RNA、percent_mito、log10_ratio_features_to_umi
-# - 按样本分组（sample 字段），展示不同样本的指标分布和相关性
-# - 设置阈值线：
-#   - nCount_RNA = 500（UMI 计数）
-#   - nFeature_RNA = 300（基因数）
-#   - percent_mito = 10（线粒体基因比例）
-#   - log10_ratio_features_to_umi = 0.8
-# - 点大小设置为 0.1，显示单个细胞的分布
-# - 小提琴图和散点图按 4 行排列（每行 1 个指标）
+#-------------------------------------------------------------------------------
+# 说明：
+# - 可视化 QC 指标分布与相关性：
+#     - 分布图：小提琴图（Violin）
+#     - 相关性：散点图（Scatter）+ 综合视图（Comprehensive）
+# - 可视指标：
+#     - nCount_RNA、nFeature_RNA、percent_mito、log10_ratio_features_to_umi
+# - 每行显示一个指标（共 4 行），每列为不同样本（按 sample 字段分组）
+# - 阈值线设置：
+#     - nCount_RNA ≥ 500
+#     - nFeature_RNA ≥ 300
+#     - percent_mito ≤ 10
+#     - ratio ≥ 0.8
+# - 点大小设为 0.1，展示单细胞分布
 # - 输出路径：
-#   - 小提琴图：results/figures/qc_metrics_combined.png
-#   - 散点图：results/figures/qc_metrics_scatter_combined.png
-#   - 综合散点图：results/figures/qc_metrics_comprehensive.png
+#     - 小提琴图：results/figures/qc_metrics_combined.png
+#     - 散点图：results/figures/qc_metrics_scatter_combined.png
+#     - 综合散点图：results/figures/qc_metrics_comprehensive.png
+#-------------------------------------------------------------------------------
 
-message("步骤 2.2：可视化质控指标...")
-plot_qc_metrics(sce,
+cli::cli_h1("📊 步骤 2.2：可视化质控指标")
+
+plot_qc_metrics(seu,
                 output_dir = output_dir,
-                pt.size = 0.1,  # 设置点大小为 0.1
+                pt.size = 0.1,                # 设置点大小为 0.1
                 umi_threshold = 500,
                 feature_threshold = 300,
                 mito_threshold = 10,
                 ratio_threshold = 0.8)
 
-# 打印输出路径
-message("质控指标图表已保存至：")
-message("- 小提琴图：", file.path(output_dir, "figures", "qc_metrics_combined.png"))
-message("- 散点图：", file.path(output_dir, "figures", "qc_metrics_scatter_combined.png"))
-message("- 综合散点图：", file.path(output_dir, "figures", "qc_metrics_comprehensive.png"))
-
-#-------------------------------------------------------------------------------
+# 打印输出文件路径
+cli::cli_alert_success("✅ 质控图表已保存至：")
+cli::cli_text("📌 小提琴图：{file.path(output_dir, 'figures', 'qc_metrics_combined.png')}")
+cli::cli_text("📌 散点图：{file.path(output_dir, 'figures', 'qc_metrics_scatter_combined.png')}")
+cli::cli_text("📌 综合图：{file.path(output_dir, 'figures', 'qc_metrics_comprehensive.png')}")
 
 #-------------------------------------------------------------------------------
 # 步骤 2.3：过滤低质量细胞
