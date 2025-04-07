@@ -16,6 +16,13 @@
 #   - 无返回值，打印探索信息（仅作交互输出使用）
 
 explore_seurat <- function(seu, explore_mode = TRUE) {
+  #---------------------------
+  # 显式加载必要包
+  #---------------------------
+  if (!requireNamespace("cli", quietly = TRUE)) stop("请安装 cli 包")
+  if (!requireNamespace("Seurat", quietly = TRUE)) stop("请安装 Seurat 包")
+  if (!requireNamespace("SeuratObject", quietly = TRUE)) stop("请安装 SeuratObject 包")
+
   if (!explore_mode || !exists("seu")) return(invisible(NULL))
 
   cli::cli_h1("🔍 Seurat 对象结构探索")
@@ -24,7 +31,7 @@ explore_seurat <- function(seu, explore_mode = TRUE) {
   # 1. 查看整体结构
   #------------------------------------------------------------
   cli::cli_h2("📦 Seurat 对象结构")
-  str(seu)
+  utils::str(seu)
 
   #------------------------------------------------------------
   # 2. 表达矩阵（counts 层）
@@ -36,7 +43,7 @@ explore_seurat <- function(seu, explore_mode = TRUE) {
   # print(counts1[1:5, 1:5])
 
   # 方法 2：推荐方式
-  counts <- GetAssayData(seu, assay = "RNA", slot = "counts")
+  counts <- Seurat::GetAssayData(seu, assay = "RNA", slot = "counts")
   print(counts[1:5, 1:5])
 
   #------------------------------------------------------------
@@ -52,14 +59,14 @@ explore_seurat <- function(seu, explore_mode = TRUE) {
 
   # 方法 3：推荐写法
   metadata <- seu[[]]
-  head(metadata)
+  utils::head(metadata)
   cli::cli_text("📌 列名：{paste(colnames(metadata), collapse = ', ')}")
 
   #------------------------------------------------------------
   # 4. 默认激活的 assay
   #------------------------------------------------------------
   cli::cli_h2("🔧 当前默认 assay")
-  active_assay <- DefaultAssay(seu)
+  active_assay <- Seurat::DefaultAssay(seu)  # nolint
   cli::cli_text("默认 assay：{active_assay}")
 
   #------------------------------------------------------------
@@ -72,8 +79,8 @@ explore_seurat <- function(seu, explore_mode = TRUE) {
   # cells1 <- colnames(seu@assays$RNA)
 
   # 方法 2：推荐方式
-  genes <- rownames(seu)
-  cells <- colnames(seu)
+  genes <- rownames(seu) # nolint
+  cells <- colnames(seu) # nolint
 
   cli::cli_text("🔹 Genes: {paste(head(genes), collapse = ', ')}")
   cli::cli_text("🔹 Cells: {paste(head(cells), collapse = ', ')}")
