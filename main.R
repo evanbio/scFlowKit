@@ -3,28 +3,27 @@
 #-------------------------------------------------------------------------------
 
 # 项目信息
-# Name: scFlowKit
-# Description: 一个模块化的单细胞 RNA-seq 分析流程，支持 R 和 Python
-# GitHub: https://github.com/chriswang001121/scFlowKit
-# License: MIT License
-# Version: [占位，待后续补充]
+# Name       : scFlowKit
+# Description: 一个模块化的单细胞 RNA-seq 分析流程，支持 R 与 Python 互通
+# GitHub     : https://github.com/evanbio/scFlowKit
+# License    : MIT License
+# Version    : [TODO: 后续填写版本号]
 
 # 作者信息
-# Name: chriswang001121
-# Email: chriswang001121@gmail.com
-# Homepage: https://scholar.pulppoetry.org
-# LinkedIn: https://www.linkedin.com/in/yibin-zhou
+# Author     : Evan Zhou (Yibin Zhou)
+# Email      : evanzhou.bio@gmail.com
+# Website    : https://academic.evanzhou.org
+# GitHub     : https://github.com/evanbio
+# LinkedIn   : https://www.linkedin.com/in/yibin-zhou
 
-
-# 当前版本功能
-# - 数据加载：支持 10X Genomics 数据格式（.h5 或 .mtx）
-# - 数据预处理：质量控制（QC）、过滤、标准化、可变基因选择、细胞周期评分
-# - 聚类和降维：PCA、t-SNE、UMAP
-# - 差异表达分析：识别每个聚类的标志基因
-# - 细胞注释：基于标志基因推断细胞类型
+# 当前版本功能：
+# - ✅ 数据加载：支持多格式（10X .mtx/.h5, AnnData .h5ad, Loom .loom, SCE .rds）
+# - ✅ 预处理模块：QC、过滤、标准化（LogNorm/VST）、高变基因识别、细胞周期评分
+# - ✅ 降维与聚类：PCA、t-SNE、UMAP、Louvain/Leiden 聚类
+# - ✅ 差异表达分析：Wilcoxon/MAST 等方法识别 marker genes
+# - ✅ 细胞类型注释：支持 marker-based 自动注释 + 自定义 marker 集合
 
 #-------------------------------------------------------------------------------
-
 
 #-------------------------------------------------------------------------------
 # 安装依赖包
@@ -76,34 +75,69 @@ source("scRNAutils/read_sce.R")
 
 use_sce <- FALSE  # ✅ 使用 SCE 模式（.rds/.h5ad/.loom/.h5/.mtx）
 
-sce_input_path <- "data/raw/your_sce_data.rds"  # 或者 .h5ad 等
-
 if (use_sce) {
   #-----------------------------------------------
   # 加载数据（SCE 模式）
   #-----------------------------------------------
   cli_h1("🧬 步骤 1：加载 SingleCellExperiment 数据")
 
-  if (!file.exists(sce_input_path)) {
-    cli::cli_alert_danger("❌ 指定的 SCE 文件不存在：{sce_rds_path}")
+    # ✅ 支持多个 SCE 文件（路径向量）
+  sce_input_paths <- c(
+    "data/raw/sample1.rds",
+    "data/raw/sample2.h5ad"
+    # 可继续添加更多样本
+  )
+
+  # 自动提取样本名（去掉路径和扩展名）
+  sample_names <- basename(tools::file_path_sans_ext(sce_input_paths))
+
+  # 检查文件是否存在
+  missing_paths <- sce_input_paths[!file.exists(sce_input_paths)]
+  if (length(missing_paths) > 0) {
+    cli::cli_alert_danger("❌ 以下 SCE 文件不存在：{paste(missing_paths, collapse = ', ')}")
     stop()
   }
 
-  # 自动识别格式并读取（支持 rds/h5ad/loom/mtx/h5）
-  sce <- if (grepl("\\.rds$", sce_input_path)) {
-    cli_text("使用 readRDS 加载 .rds 文件")
-    readRDS(sce_input_path)
+  # 初始化结果列表
+  seu_list <- list()
+
+  # 遍历读取每个样本
+  for (i in seq_along(sce_input_paths)) {
+    path <- sce_input_paths[i]
+    name <- sample_names[i]
+
+    cli::cli_h2("📦 读取样本：{name}")
+
+    sce <- if (grepl("\\.rds$", path)) {
+      cli::cli_text("📄 使用 readRDS 读取 {name}")
+      readRDS(path)
+    } else {
+      cli::cli_text("📄 使用 read_sce 读取 {name}")
+      read_sce(path)
+    }
+
+    if (is.null(sce)) {
+      cli::cli_alert_warning("⚠️ 读取失败：{name}，跳过该样本。")
+      next
+    }
+
+    # 转换为 Seurat 对象
+    seu_tmp <- sce2seu(sce, counts_assay = "counts", project = name)
+    seu_tmp$sample <- name
+    seu_list[[name]] <- seu_tmp
+  }
+
+  # 合并 Seurat 对象
+  if (length(seu_list) == 0) {
+    cli::cli_alert_danger("❌ 没有任何 SCE 文件成功加载，终止。")
+    stop()
+  } else if (length(seu_list) == 1) {
+    seu <- seu_list[[1]]
   } else {
-    read_sce(sce_input_path)
+    cli::cli_alert_info("🧪 合并多个 Seurat 对象 ...")
+    seu <- merge(seu_list[[1]], y = seu_list[-1], add.cell.id = names(seu_list))
+    seu <- JoinLayers(seu)
   }
-
-  if (is.null(sce)) {
-  cli_alert_danger("❌ SCE 读取失败，未能创建对象。")
-  stop()
-  }
-
-  # 转换为 Seurat 对象
-  seu <- sce2seu(sce, counts_assay = "counts", project = "sce_import")
 
 } else {
   #-----------------------------------------------
@@ -163,54 +197,16 @@ print(seu)
 
 
 #-------------------------------------------------------------------------------
-# 步骤 1.5：探索 Seurat 对象结构（注释掉，仅供学习参考）
-# 
+# 步骤 1.5：可选探索 Seurat 对象结构（开发调试模式）
 #-------------------------------------------------------------------------------
 
-# # 查看 Seurat 对象的整体结构
-# str(sce)
+source("Rutils/explore_seurat.R")  # 加载结构探索函数
 
-# # 提取 assay 数据（RNA 表达矩阵）
-# # - sce[["RNA"]] 提取 RNA assay
-# # - sce[["RNA"]]$counts 提取原始计数矩阵
-# # - sce[["RNA"]]$data 提取标准化后的数据（当前为空，因为尚未标准化）
-# rna_counts <- sce[["RNA"]]$counts                    # 方法 1：通过层级索引提取
-# rna_counts <- GetAssayData(sce,                      # 方法 2：通过函数提取
-#                            assay = "RNA",
-#                            layer = "counts")
-# # 查看前几个基因和细胞的表达量
-# rna_counts[1:5, 1:5]
+# 控制是否启用探索模式
+explore_mode <- TRUE  # ✅ 可改为 FALSE 关闭结构探索
 
-# # 提取 metadata（元数据）
-# # - sce@meta.data 包含细胞的元数据，如细胞 ID、每个细胞的基因数等
-# metadata <- sce@meta.data                            # 方法 1：通过层级索引提取
-# metadata <- colData(sce)                             # 方法 2：通过函数提取
-# metadata <- sce[[]]                                  # 方法 3：Seurat 4.0.0 之后的版本可以直接提取，默认提取 metadata
-# # 查看元数据的列名
-# colnames(metadata)
-# # 查看前几行元数据
-# head(metadata)
-
-# # 查看当前激活的 assay
-# active_assay <- DefaultAssay(sce)
-# message("当前激活的 assay：", active_assay)
-
-# # 查看 Seurat 对象的基因名（features）
-# features <- rownames(sce@assays$RNA)                 # 方法 1：通过层级索引提取
-# features <- rownames(sce)                            # 方法 2：通过函数提取
-# # 查看前几个基因名
-# head(features)
-
-# # 查看 Seurat 对象的细胞名（samples）
-# cells <- colnames(sce@assays$RNA)                    # 方法 1：通过层级索引提取
-# cells <- colnames(sce)                               # 方法 2：通过函数提取
-# # 查看前几个细胞名
-# head(cells)
-
-# # 查看 Seurat 对象的层（layers）
-# # - 当前只有 counts 层，标准化后会有 data 层
-# layers <- SeuratObject::Layers(sce)
-# message("当前数据层：", paste(layers, collapse = ", "))
+# 调用探索函数
+explore_seurat(seu, explore_mode = explore_mode)
 
 #-------------------------------------------------------------------------------
 
