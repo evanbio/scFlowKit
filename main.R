@@ -601,10 +601,10 @@ source("Rutils/remove_doublets.R")
 #   - 过滤后的 Seurat 对象仅保留 Singlet 细胞
 
 # 记录过滤前的细胞数量
-pre_cell_count <- ncol(sce)
-message("过滤双细胞前的细胞数量：", pre_cell_count)
+pre_cell_count <- ncol(seu)
+cli::cli_text("过滤前细胞数量：{pre_cell_count}")
 
-message("步骤 2.9：去除双细胞...")
+cli::cli_h2("步骤 2.9：检测并去除双细胞")
 sce <- remove_doublets(sce,
                        PCs = 1:20,  # 使用前 20 个主成分
                        doublet_rate = 0.08,  # 假设双细胞比例为 8%
@@ -613,17 +613,19 @@ sce <- remove_doublets(sce,
 
 # 记录过滤后的细胞数量
 post_cell_count <- ncol(sce)
-message("过滤双细胞后的细胞数量：", post_cell_count)
-message("去除的细胞数量：", pre_cell_count - post_cell_count)
+removed_count <- pre_cell_count - post_cell_count
 
 # 输出过滤双细胞后的 Seurat 对象信息
-message("过滤双细胞后的 Seurat 对象基本信息：")
-print(sce)
+cli::cli_text("过滤双细胞后的细胞数量：{post_cell_count}")
+cli::cli_text("去除的细胞数量：{removed_count}")
+
+cli::cli_text("过滤双细胞后的 Seurat 对象基本信息：")
+print(seu)
 
 # 保存去除双细胞后的数据（中间点）
-message("保存去除双细胞后的 Seurat 对象...")
-saveRDS(sce, file = file.path(processed_data_dir, "scFlowKit_doublet_removed.rds"))
-message("已保存至：", file.path(processed_data_dir, "scFlowKit_doublet_removed.rds"))
+filtered_rds_path <- file.path(processed_data_dir, "scFlowKit_doublet_removed.rds")
+saveRDS(seu, file = filtered_rds_path)
+cli::cli_alert_success("已保存 Seurat 对象（去除双细胞）：{filtered_rds_path}")
 
 #-------------------------------------------------------------------------------
 # 步骤 2.10：SCTransform 标准化
@@ -636,7 +638,7 @@ source("Rutils/run_sctransform.R")
 # 可选：从 .rds 文件加载去除双细胞后的 Seurat 对象（跳过步骤 2.1 到 2.9）
 # - 加载路径：processed_data_dir/scFlowKit_doublet_removed.rds
 # - 确保 processed_data_dir 已定义
-# sce <- readRDS(file.path(processed_data_dir, "scFlowKit_doublet_removed.rds"))
+# seu <- readRDS(file.path(processed_data_dir, "scFlowKit_doublet_removed.rds"))
 
 # - 使用 SCTransform 进行标准化，作用涵盖了 NormalizeData、FindVariableFeatures 和 ScaleData
 # - 参数说明：
@@ -653,28 +655,27 @@ source("Rutils/run_sctransform.R")
 #   - 后续整合步骤将处理分组对象列表
 #   - 原始 RNA assay 保持不变
 
-message("步骤 2.10：SCTransform 标准化...")
-sce_list <- run_sctransform(sce,
-                        vars.to.regress = NULL,
-                        variable.features.n = 3000,
-                        assay = "RNA",
-                        split.by = "sample",  # 按 sample 分组运行
-                        method = "glmGamPoi",
-                        vst.flavor = "v2",
-                        ncells = NULL, # 动态设置
-                        seed.use = 42,
-                        verbose = TRUE)
+# ----------------- 执行 SCTransform -----------------
+cli::cli_h2("步骤 2.10：SCTransform 标准化")
+seu_list <- run_sctransform(seu,
+                            vars.to.regress = NULL,
+                            variable.features.n = 3000,
+                            assay = "RNA",
+                            split.by = "sample",  # 按 sample 分组运行
+                            method = "glmGamPoi",
+                            vst.flavor = "v2",
+                            ncells = NULL, # 动态设置
+                            seed.use = 42,
+                            verbose = TRUE)
 
 # 打印分组结果信息
-message("分组后的 Seurat 对象列表：")
-print(sce_list)
+cli::cli_text("标准化完成，输出分组的 Seurat 对象列表：")
+print(seu_list)
 
 # 保存SCTransform 标准化后的数据（中间点）
-message("保存SCTransform 标准化后的 Seurat 对象...")
-saveRDS(sce, file = file.path(processed_data_dir, "scFlowKit_run_sctransform.rds"))
-message("已保存至：", file.path(processed_data_dir, "scFlowKit_run_sctransform.rds"))
-
-#-------------------------------------------------------------------------------
+save_path <- file.path(processed_data_dir, "scFlowKit_run_sctransform.rds")
+saveRDS(seu_list, file = save_path)
+cli::cli_alert_success("✅ 保存SCTransform 标准化后的 Seurat 对象：{save_path}")
 
 #-------------------------------------------------------------------------------
 # 步骤 2.11：Integration（整合多样本）

@@ -26,21 +26,26 @@
 
 # remove_doublets: 使用 DoubletFinder 检测和去除双细胞
 # 参数:
-#   sce: Seurat 对象，包含单细胞 RNA-seq 数据（需已完成 PCA 降维）
+#   seu: Seurat 对象，包含单细胞 RNA-seq 数据（需已完成 PCA 降维）
 #   PCs: 用于双细胞检测的主成分范围（默认 1:20）
 #   doublet_rate: 假设的双细胞比例（默认 0.08，可根据实验设计调整）
 #   pN: DoubletFinder 参数，人工双细胞比例（默认 0.25）
 #   sct: 是否使用 SCTransform 数据（默认 FALSE，使用 RNA assay）
+# 
 # 返回:
 #   过滤双细胞后的 Seurat 对象
-remove_doublets <- function(sce, PCs = 1:20, doublet_rate = 0.08, pN = 0.25, sct = FALSE) {
+remove_doublets <- function(seu, PCs = 1:20, doublet_rate = 0.08, pN = 0.25, sct = FALSE) {
+
+  cli::cli_h2("检测并去除双细胞")
+
+  # ------------------------- 参数检查 -----------------------
   # 验证输入参数是否为 Seurat 对象
-  if (!inherits(sce, "Seurat")) {
-    stop("参数 'sce' 必须为 Seurat 对象！", call. = FALSE)
+  if (!inherits(seu, "Seurat")) {
+    stop("参数 'seu' 必须为 Seurat 对象！", call. = FALSE)
   }
 
   # 验证是否已完成 PCA 降维
-  if (!"pca" %in% names(sce@reductions)) {
+  if (!"pca" %in% names(seu@reductions)) {
     stop("Seurat 对象尚未完成 PCA 降维，请先运行 RunPCA！", call. = FALSE)
   }
 
@@ -50,9 +55,9 @@ remove_doublets <- function(sce, PCs = 1:20, doublet_rate = 0.08, pN = 0.25, sct
   }
 
   # 验证 PCs 是否在有效范围内
-  max_pc <- ncol(sce@reductions$pca@cell.embeddings)
+  max_pc <- ncol(seu@reductions$pca@cell.embeddings)
   if (max(PCs) > max_pc) {
-    stop("PCs 参数超出 PCA 降维的主成分数量（最大为 ", max_pc, "）！", call. = FALSE)
+    stop("PCs 参数超出 PCA 主成分数量（最大为 ", max_pc, "）！", call. = FALSE)
   }
 
   # 验证 doublet_rate 参数
@@ -74,25 +79,25 @@ remove_doublets <- function(sce, PCs = 1:20, doublet_rate = 0.08, pN = 0.25, sct
   if (!requireNamespace("DoubletFinder", quietly = TRUE)) {
     stop("请先安装 DoubletFinder 包：install.packages('DoubletFinder')", call. = FALSE)
   }
-  library(DoubletFinder)
+  suppressPackageStartupMessages(library(DoubletFinder))
 
-  # 扫描参数，找到最佳 pK 值
-  message("扫描参数，找到最佳 pK 值...")
-  sweep.res <- paramSweep(sce, PCs = PCs, sct = sct, num.cores = 1)  # 单核运行，兼容 Windows
+  # ---------------- 参数扫描确定最佳 pK ----------------
+  cli::cli_text("正在扫描 pK 参数...")
+  sweep.res <- paramSweep(seu, PCs = PCs, sct = sct, num.cores = 1)  # 单核运行，兼容 Windows
   sweep.stats <- summarizeSweep(sweep.res, GT = FALSE)
   bcmvn <- find.pK(sweep.stats)
 
   # 选择最佳 pK 值（通常是最大 BCMVN 对应的 pK）
   pK <- as.numeric(as.character(bcmvn$pK[which.max(bcmvn$BCmetric)]))
-  message("最佳 pK 值：", pK)
+  cli::cli_text("最佳 pK 值为：{pK}")
 
-  # 计算预期双细胞数量
-  nExp_poi <- round(doublet_rate * ncol(sce) * ncol(sce) / 10000)
-  message("预期双细胞数量：", nExp_poi)
+  # ---------------- 计算预期双细胞数量 ----------------
+  nExp_poi <- round(doublet_rate * ncol(seu) * ncol(seu) / 10000)
+  cli::cli_text("预期双细胞数量：{nExp_poi}")
 
-  # 运行 DoubletFinder 预测双细胞
-  message("运行 DoubletFinder 预测双细胞...")
-  sce <- doubletFinder(sce, 
+  # ---------------- 运行 DoubletFinder ----------------
+  cli::cli_text("运行 DoubletFinder 检测双细胞...")
+  seu <- doubletFinder(seu, 
                        PCs = PCs, 
                        pN = pN, 
                        pK = pK, 
@@ -102,21 +107,26 @@ remove_doublets <- function(sce, PCs = 1:20, doublet_rate = 0.08, pN = 0.25, sct
   # 关闭所有未使用的连接，避免警告
   closeAllConnections()
 
+  # ---------------- 统计并去除双细胞 ----------------
+
   # DoubletFinder 添加的列名通常为 "DF.classifications_pN_pK_nExp"
   df_col <- paste0("DF.classifications_", pN, "_", pK, "_", nExp_poi)
 
   # 统计实际双细胞数量
-  doublet_counts <- table(sce@meta.data[[df_col]])
-  message("实际双细胞检测统计：")
+  doublet_counts <- table(seu@meta.data[[df_col]])
+  cli::cli_text("实际双细胞检测统计：")
   print(doublet_counts)
+
   actual_doublets <- if ("Doublet" %in% names(doublet_counts)) doublet_counts["Doublet"] else 0
-  message("实际检测到的双细胞数量：", actual_doublets, "（预期：", nExp_poi, "）")
+  cli::cli_text("实际检测到的双细胞数量：{actual_doublets}（预期：{nExp_poi}）")
 
   # 过滤掉双细胞
-  message("过滤双细胞...")
-  sce <- subset(sce, subset = !!sym(df_col) == "Singlet")
+  cli::cli_text("正在去除双细胞...")
+  seu <- subset(seu, subset = !!sym(df_col) == "Singlet")
 
-  return(sce)
+  cli::cli_alert_success("双细胞去除完成！")
+
+  return(seu)
 }
 
 #-------------------------------------------------------------------------------
