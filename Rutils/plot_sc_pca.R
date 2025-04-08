@@ -5,7 +5,7 @@
 # 
 # plot_sc_pca: 可视化单细胞 PCA 降维结果
 # 参数:
-#   sce: Seurat 对象，包含 PCA 降维结果
+#   seu: Seurat 对象，包含 PCA 降维结果
 #   output_dir: 输出目录，用于保存 PCA 图
 #   reduction: 降维方法，默认 "pca"
 #   dims: DimPlot 使用的 PCA 维度，默认 c(1, 2)，即 PC1 和 PC2
@@ -18,7 +18,7 @@
 #
 # 返回:
 #   无返回值，直接保存 DimPlot、ElbowPlot 和 DimHeatmap到指定目录
-plot_sc_pca <- function(sce,
+plot_sc_pca <- function(seu,
                         output_dir,
                         reduction = "pca",
                         dims = c(1, 2),
@@ -34,8 +34,8 @@ plot_sc_pca <- function(sce,
 
   # ------------------------- 参数检查 -------------------------                          
   # 验证输入参数是否为 Seurat 对象
-  if (!inherits(sce, "Seurat")) {
-    stop("参数 'sce' 必须为 Seurat 对象！", call. = FALSE)
+  if (!inherits(seu, "Seurat")) {
+    stop("参数 'seu' 必须为 Seurat 对象！", call. = FALSE)
   }
 
   # 验证 output_dir 是否为字符类型
@@ -44,7 +44,7 @@ plot_sc_pca <- function(sce,
   }
 
   # 验证 reduction 是否存在
-  if (!reduction %in% names(sce@reductions)) {
+  if (!reduction %in% names(seu@reductions)) {
     stop("参数 'reduction' 必须为 Seurat 对象中的一个降维结果！", call. = FALSE)
   }
 
@@ -54,12 +54,12 @@ plot_sc_pca <- function(sce,
   }
 
   # 验证 group.by 是否为字符且存在于元数据中
-  if (!is.character(group.by) || length(group.by) != 1 || !group.by %in% colnames(sce@meta.data)) {
+  if (!is.character(group.by) || length(group.by) != 1 || !group.by %in% colnames(seu@meta.data)) {
     stop("参数 'group.by' 必须为单一字符，且存在于元数据中！", call. = FALSE)
   }
 
   # 验证 split.by 是否为字符且存在于元数据中
-  if (!is.character(split.by) || length(split.by) != 1 || !split.by %in% colnames(sce@meta.data)) {
+  if (!is.character(split.by) || length(split.by) != 1 || !split.by %in% colnames(seu@meta.data)) {
     stop("参数 'split.by' 必须为单一字符，且存在于元数据中！", call. = FALSE)
   }
 
@@ -101,7 +101,7 @@ plot_sc_pca <- function(sce,
 
   # 第一行左：按 sample 分组
   cli::cli_text("绘制 DimPlot（按 sample 分组）")
-  p1 <- DimPlot(sce,
+  p1 <- DimPlot(seu,
                 reduction = reduction,
                 dims = dims,
                 group.by = "sample",
@@ -111,7 +111,7 @@ plot_sc_pca <- function(sce,
 
   # 第一行右：按 group.by 分组
   cli::cli_text("绘制 DimPlot（按 {group.by} 分组）", .envir = environment())
-  p2 <- DimPlot(sce,
+  p2 <- DimPlot(seu,
                 reduction = reduction,
                 dims = dims,
                 group.by = group.by,
@@ -121,7 +121,7 @@ plot_sc_pca <- function(sce,
 
   # 第二行：按 group.by 分组，按 split.by 分面
   cli::cli_text("绘制 DimPlot（按 {group.by} 分组，按 {split.by} 分面）...", .envir = environment())
-  p3 <- DimPlot(sce,
+  p3 <- DimPlot(seu,
                 reduction = reduction,
                 dims = dims,
                 group.by = group.by,
@@ -137,7 +137,7 @@ plot_sc_pca <- function(sce,
   pca_file <- file.path(figures_dir, paste0(prefix, "_pca_dimplot.png"))
 
   # 保存组合图
-  ggsave(file.path(figures_dir, filename),
+  ggsave(pca_file,
          plot = combined_plot,
          width = width,
          height = height,
@@ -164,7 +164,7 @@ plot_sc_pca <- function(sce,
   # 绘制 DimHeatmap（前 9 个 PCs）
   if (plot_heatmap) {
     cli::cli_text("🔥 绘制 DimHeatmap（前 9 个主成分）")
-    p_heatmap <- DimHeatmap(sce,
+    p_heatmap <- DimHeatmap(seu,
                             dims = 1:9,
                             cells = 500,
                             balanced = TRUE)

@@ -743,46 +743,50 @@ cli::cli_alert_success("已保存至：{file.path(processed_data_dir, 'scFlowKit
 # - 预期输出：
 #   - 包含 PCA 降维结果的 Seurat 对象（reductions 槽中）
 
-message("步骤 2.12：PCA（再次运行，基于整合后的数据）...")
+cli::cli_h2("步骤 2.12：PCA（基于整合数据）")
 
 # 根据整合方法选择 PCA 输入
 method <- "cca"  # 根据实际使用的整合方法设置（"none", "cca", "harmony"）
 
 if (method == "none") {
   # 未整合：使用 SCT assay 运行 PCA
-  message("未整合，使用 SCT assay 运行 PCA...")
-  sce_integrated <- RunPCA(sce_integrated,
-                           assay = "SCT",
-                           npcs = 50,
-                           seed.use = 42,
-                           verbose = TRUE)
+  cli::cli_text("未整合，使用 SCT assay 运行 PCA...")
+  seu <- RunPCA(seu,
+                assay = "SCT",
+                npcs = 50,
+                seed.use = 42,
+                verbose = TRUE)
+
 } else if (method == "cca") {
   # 使用 integrated assay 运行 PCA
-  message("使用 integrated assay 运行 PCA...")
-  sce_integrated <- RunPCA(sce_integrated,
-                           assay = "integrated",
-                           npcs = 50,
-                           seed.use = 42,
-                           verbose = TRUE)
+  cli::cli_text("未整合，使用 SCT assay 运行 PCA...")
+  seu <- RunPCA(seu,
+                assay = "SCT",
+                npcs = 50,
+                seed.use = 42,
+                verbose = TRUE)
+                
 } else if (method == "harmony") {
   # 使用 harmony 降维结果运行 PCA
-  message("使用 harmony 降维结果运行 PCA...")
-  sce_integrated <- RunPCA(sce_integrated,
-                           reduction = "harmony",
-                           npcs = 50,
-                           seed.use = 42,
-                           verbose = TRUE)
+  cli::cli_text("使用 harmony 降维结果运行 PCA...")
+  seu <- RunPCA(seu,
+                reduction = "harmony",
+                npcs = 50,
+                seed.use = 42,
+                verbose = TRUE)
 }
 
 # 打印 PCA 结果信息
-message("PCA 降维完成！")
-message("整合后的 Seurat 对象基本信息：")
-print(sce_integrated)
+cli::cli_alert_success("PCA 降维完成！")
+cli::cli_text("Seurat 对象降维信息：")
+print(seu)
 
 # 保存 PCA 降维后的 Seurat 对象（中间点）
-message("保存 PCA 降维后的 Seurat 对象...")
-saveRDS(sce_integrated, file = file.path(processed_data_dir, "scFlowKit_pca.rds"))
-message("已保存至：", file.path(processed_data_dir, "scFlowKit_pca.rds"))
+save_path <- file.path(processed_data_dir, "scFlowKit_pca.rds")
+cli::cli_text("保存降维结果到：{save_path}")
+saveRDS(seu, file = save_path)
+cli::cli_alert_success("保存完成！")
+
 
 #-------------------------------------------------------------------------------
 # 步骤 2.13：可视化和探索 PCA 结果
@@ -808,63 +812,49 @@ message("已保存至：", file.path(processed_data_dir, "scFlowKit_pca.rds"))
 message("步骤 2.13：可视化和探索 PCA 结果...")
 
 # 导入 visualize_pca 模块
-source("Rutils/visualize_pca.R")
+source("Rutils/plot_sc_pca.R")
 
-# 运行 visualize_pca
-visualize_pca(sce_integrated,
-              output_dir = output_dir,
-              reduction = "pca",
-              dims = c(1, 2),  # 使用 PC1 和 PC2
-              group.by = "Phase",  # 按细胞周期阶段分组
-              split.by = "Phase",  # 按细胞周期阶段分面
-              ndims = 50,  # 显示前 50 个主成分
-              width = 10,
-              height = 10,
-              dpi = 300)
+# 运行 plot_sc_pca
+plot_sc_pca(seu_integrated,
+            output_dir = output_dir,
+            reduction = "pca",
+            dims = c(1, 2),  # 使用 PC1 和 PC2
+            group.by = "Phase",  # 按细胞周期阶段分组
+            split.by = "Phase",  # 按细胞周期阶段分面
+            ndims = 50,  # 显示前 50 个主成分
+            width = 10,
+            height = 10,
+            dpi = 300)
 
-# # 探索 PCA 结果：选择主成分（PCs）数量
-# message("探索 PCA 结果：选择主成分（PCs）数量...")
+#-------------------------------------------------------------------------------
+# 探索 PCA 结果：选择主成分（PCs）数量
+#-------------------------------------------------------------------------------
 
-# # 计算每个 PC 的方差贡献比例（百分比）
-# # - stdev：每个 PC 的标准差，表示变异大小
-# # - variance_ratio：每个 PC 的方差贡献比例（%）
-# variance <- sce_integrated[["pca"]]@stdev
-# total_variance <- sum(variance)
-# variance_ratio <- (variance / total_variance) * 100
+# - 本步骤将根据 PCA 结果，使用 suggest_pcs 函数自动推荐合适的主成分数量
+# - 该函数结合两种指标判断：
+#     - 指标 1：累计方差贡献 > 90%，且当前 PC 贡献 < 5%
+#     - 指标 2：主成分解释度下降显著（> 0.1%）的最后一个主成分（肘部位置）
+# - 推荐值为以上两个指标中较小者，更稳健、避免噪声干扰
 
-# # 计算累计方差贡献比例
-# # - cumulative_variance_ratio：前 k 个 PCs 的累计方差贡献（%）
-# cumulative_variance_ratio <- cumsum(variance_ratio)
+# 导入辅助函数
+source("Rutils/suggest_pcs.R")
 
-# # 指标 1：累计方差贡献 > 90% 且单 PC 贡献 < 5%
-# # - 找到第一个满足条件的 PC，确保涵盖大部分变异，同时避免噪声
-# pc_cutoff_1 <- which(cumulative_variance_ratio > 90 & variance_ratio < 5)[1]
-# message("指标 1：累计方差贡献 > 90% 且单 PC 贡献 < 5%，选择的 PC 数量：", pc_cutoff_1)
+# 运行推荐函数
+pcs_to_use <- suggest_pcs(seu_integrated, reduction = "pca", verbose = TRUE)
 
-# # 指标 2：方差贡献变化 > 0.1% 的最后一个 PC
-# # - 找到方差贡献下降速度显著减缓的 PC（肘部位置）
-# variance_diff <- variance_ratio[1:(length(variance_ratio) - 1)] - variance_ratio[2:length(variance_ratio)]
-# pc_cutoff_2 <- sort(which(variance_diff > 0.1), decreasing = TRUE)[1] + 1
-# message("指标 2：方差贡献变化 > 0.1% 的最后一个 PC，选择的 PC 数量：", pc_cutoff_2)
-
-# # 选择两个指标的最小值
-# # - 确保涵盖大部分变异，同时避免过多噪声
-# suggested_pcs <- min(pc_cutoff_1, pc_cutoff_2, na.rm = TRUE)
-# message("建议的 PC 数量（基于两个指标）：", suggested_pcs)
-
-# # 打印前 10 个 PCs 的 top 5 驱动基因
-# message("打印前 10 个 PCs 的 top 5 驱动基因：")
-# print(sce_integrated[["pca"]], dims = 1:10, nfeatures = 5)
+# 可选：打印前 10 个 PC 的 top 5 驱动基因（用于手动审阅）
+message("前 10 个主成分的 Top 5 驱动基因如下：")
+print(seu_integrated[["pca"]], dims = 1:10, nfeatures = 5)
 
 # # 最终选择：基于 SCTransform 的经验值，使用前 40 个 PCs
 # # - SCTransform 更准确，40 个 PCs 是合理的折中（保留足够变异，控制计算复杂度）
 # pcs_to_use <- 40
 # message("最终选择的 PC 数量（基于 SCTransform 经验值）：", pcs_to_use)
-#-------------------------------------------------------------------------------
+#---------------------------------------------------------------------------
 
 
 #-------------------------------------------------------------------------------
-# 步骤 3.1：寻找邻居
+# 步骤 3.1：构建邻居图（FindNeighbors）
 #-------------------------------------------------------------------------------
 
 # 可选：从 .rds 文件加载 PCA 降维后的 Seurat 对象（跳过步骤 2.1 到 2.12）
