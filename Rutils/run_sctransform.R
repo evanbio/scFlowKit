@@ -21,7 +21,7 @@
 
 # run_sctransform: 运行 SCTransform 标准化
 # 参数:
-#   sce: Seurat 对象，包含单细胞 RNA-seq 数据
+#   seu: Seurat 对象，包含单细胞 RNA-seq 数据
 #   vars.to.regress: 回归掉的变量（默认 NULL，可指定为 c("S.Score", "G2M.Score") 或 "percent_mito")
 #   variable.features.n: 选择的高变基因数量（默认 3000）
 #   assay: 输入的 assay 名称（默认 "RNA")
@@ -33,7 +33,8 @@
 #   verbose: 是否显示进度信息（默认 TRUE）
 # 返回:
 #   如果 split.by 不为 NULL，返回分组后的 Seurat 对象列表；否则返回单个 Seurat 对象
-run_sctransform <- function(sce,
+
+run_sctransform <- function(seu,
                             vars.to.regress = NULL,
                             variable.features.n = 3000,
                             assay = "RNA",
@@ -43,28 +44,29 @@ run_sctransform <- function(sce,
                             ncells = NULL,
                             seed.use = 42,
                             verbose = TRUE) {
+  
+  cli::cli_h2("SCTransform 标准化")
+
+  # ---------------- 参数检查 ----------------
+
   # 验证输入参数是否为 Seurat 对象
-  if (!inherits(sce, "Seurat")) {
-    stop("参数 'sce' 必须为 Seurat 对象！", call. = FALSE)
+  if (!inherits(seu, "Seurat")) {
+    stop("参数 'seu' 必须为 Seurat 对象！", call. = FALSE)
   }
 
   # 验证 assay 是否存在
-  if (!assay %in% names(sce@assays)) {
+  if (!assay %in% names(seu@assays)) {
     stop("参数 'assay' 必须为 Seurat 对象中的一个 assay！", call. = FALSE)
   }
 
   # 验证 vars.to.regress 是否为 NULL 或元数据中的列
-  if (!is.null(vars.to.regress)) {
-    if (!all(vars.to.regress %in% colnames(sce@meta.data))) {
-      stop("参数 'vars.to.regress' 中的变量必须存在于元数据中！", call. = FALSE)
-    }
+  if (!is.null(vars.to.regress) && !all(vars.to.regress %in% colnames(seu@meta.data))) {
+    stop("参数 'vars.to.regress' 中的变量必须存在于元数据中！", call. = FALSE)
   }
 
   # 验证 split.by 是否为 NULL 或元数据中的列
-  if (!is.null(split.by)) {
-    if (!is.character(split.by) || length(split.by) != 1 || !split.by %in% colnames(sce@meta.data)) {
-      stop("参数 'split.by' 必须为单一字符，且存在于元数据中！", call. = FALSE)
-    }
+  if (!is.null(split.by) && (!is.character(split.by) || length(split.by) != 1 || !split.by %in% colnames(seu@meta.data))) {
+    stop("参数 'split.by' 必须为单一字符，且存在于元数据中！", call. = FALSE)
   }
 
   # 验证 variable.features.n 是否为正整数
@@ -97,8 +99,8 @@ run_sctransform <- function(sce,
     stop("参数 'verbose' 必须为逻辑值！", call. = FALSE)
   }
 
-  # 加载 Seurat 包
-  library(Seurat)
+  # ---------------- 环境准备 ----------------
+  suppressPackageStartupMessages(library(Seurat))
 
   # 检查 glmGamPoi 包是否安装（当 vst.flavor = "v2" 且 method = "glmGamPoi" 时）
   if (vst.flavor == "v2" && method == "glmGamPoi") {
@@ -112,22 +114,24 @@ run_sctransform <- function(sce,
     }
   }
 
+  # ---------------- 执行 SCTransform ----------------
   # 如果 split.by 不为 NULL，则按分组运行 SCTransform
   if (!is.null(split.by)) {
-    message("按 ", split.by, " 分组运行 SCTransform...")
+    cli::cli_text("按 {split.by} 分组运行 SCTransform...", .envir = environment())
     # 分割 Seurat 对象
-    sce_list <- SplitObject(sce, split.by = split.by)
+    seu_list <- SplitObject(seu, split.by = split.by)
+
     # 对每个分组运行 SCTransform
-    sce_list <- lapply(sce_list, function(x) {
+    seu_list <- lapply(seu_list, function(obj) {
       # 动态设置 ncells：如果细胞数量小于 5000，则使用所有细胞；否则使用 5000
-      sample_cells <- ncol(x)
+      n_cells <- ncol(obj)
       dynamic_ncells <- if (is.null(ncells)) {
-        if (sample_cells < 5000) sample_cells else 5000
+        if (n_cells < 5000) n_cells else 5000
       } else {
         ncells
       }
-      message("当前样本细胞数量：", sample_cells, "，设置 ncells = ", dynamic_ncells)
-      SCTransform(x,
+      cli::cli_text("当前样本细胞数：{n_cells}，设置 ncells = {dynamic_ncells}")
+      SCTransform(obj,
                   assay = assay,
                   vars.to.regress = vars.to.regress,
                   variable.features.n = variable.features.n,
@@ -137,21 +141,23 @@ run_sctransform <- function(sce,
                   seed.use = seed.use,
                   verbose = verbose)
     })
+
     # 返回分组结果（不合并）
-    message("SCTransform 标准化完成！返回分组后的 Seurat 对象列表...")
-    return(sce_list)
+    cli::cli_alert_success("SCTransform 标准化完成，返回分组后的 Seurat 对象列表！")
+    return(seu_list)
+    
   } else {
     # 动态设置 ncells：如果细胞数量小于 5000，则使用所有细胞；否则使用 5000
-    total_cells <- ncol(sce)
+    n_cells <- ncol(seu)
     dynamic_ncells <- if (is.null(ncells)) {
-      if (total_cells < 5000) total_cells else 5000
+      if (n_cells < 5000) n_cells else 5000
     } else {
       ncells
     }
-    message("总细胞数量：", total_cells, "，设置 ncells = ", dynamic_ncells)
+    cli::cli_text("总细胞数：{n_cells}，设置 ncells = {dynamic_ncells}")
+
     # 直接运行 SCTransform
-    message("运行 SCTransform 标准化...")
-    sce <- SCTransform(sce,
+    seu <- SCTransform(seu,
                        assay = assay,
                        vars.to.regress = vars.to.regress,
                        variable.features.n = variable.features.n,
@@ -160,8 +166,8 @@ run_sctransform <- function(sce,
                        ncells = dynamic_ncells,
                        seed.use = seed.use,
                        verbose = verbose)
-    return(sce)
+    cli::cli_alert_success("SCTransform 标准化完成！")
+    return(seu)
   }
 }
-
 #-------------------------------------------------------------------------------

@@ -687,11 +687,11 @@ source("Rutils/run_integration.R")
 # 可选：从 .rds 文件加载 SCTransform 标准化后的 Seurat 对象列表（跳过步骤 2.10）
 # - 加载路径：processed_data_dir/scFlowKit_run_sctransform.rds
 # - 确保 processed_data_dir 已定义
-# sce_list <- readRDS(file.path(processed_data_dir, "scFlowKit_run_sctransform.rds"))
+# seu_list <- readRDS(file.path(processed_data_dir, "scFlowKit_run_sctransform.rds"))
 
 # - 使用 IntegrateData 或 Harmony 整合多样本数据，去除批次效应
 # - 参数说明：
-#   - sce_list：分组后的 Seurat 对象列表（donor1 到 donor4）
+#   - seu_list：分组后的 Seurat 对象列表（donor1 到 donor4）
 #   - method = "cca"：使用 CCA 方法（Seurat 默认）
 #   - assay = "SCT"：使用 SCT assay 作为输入
 #   - k.anchor = 5：寻找 anchors 时的 k 参数（仅 CCA）
@@ -706,23 +706,26 @@ source("Rutils/run_integration.R")
 #   - method = "harmony"：创建 harmony 降维结果，包含校正后的 PCA 嵌入
 #   - method = "none"：合并后的 Seurat 对象，包含 SCT assay
 
-message("步骤 2.11：Integration（整合）...")
-sce_integrated <- run_integration(sce_list,
-                       method = "cca",  # 使用 CCA 方法
-                       assay = "SCT",
-                       k.anchor = 5,
-                       k.filter = 200,
-                       k.score = 30,
-                       new.assay.name = "integrated",
-                       dims = 1:30,
-                       npcs = 50,
-                       variable.features.n = 2000,
-                       verbose = TRUE)
+cli::cli_h2("步骤 2.11：整合多样本数据（Integration）")
+
+# 执行整合
+cli::cli_text("运行整合函数 run_integration()，方法为 'cca'...")
+seu_integrated <- run_integration(seu_list,
+                                  method = "cca",  # 使用 CCA 方法
+                                  assay = "SCT",
+                                  k.anchor = 5,
+                                  k.filter = 200,
+                                  k.score = 30,
+                                  new.assay.name = "integrated",
+                                  dims = 1:30,
+                                  npcs = 50,
+                                  variable.features.n = 2000,
+                                  verbose = TRUE)
 
 # 保存整合后的 Seurat 对象（中间点）
-message("保存整合后的 Seurat 对象...")
+cli::cli_text("保存整合后的 Seurat 对象...")
 saveRDS(sce, file = file.path(processed_data_dir, "scFlowKit_integrated.rds"))
-message("已保存至：", file.path(processed_data_dir, "scFlowKit_integrated.rds"))
+cli::cli_alert_success("已保存至：{file.path(processed_data_dir, 'scFlowKit_integrated.rds')}")
 
 
 #-------------------------------------------------------------------------------
