@@ -793,7 +793,7 @@ cli::cli_alert_success("保存完成！")
 #-------------------------------------------------------------------------------
 # - 使用 visualize_pca 函数可视化 PCA 降维结果，检查细胞周期相关分布
 # - 参数说明：
-#   - sce_integrated：整合后的 Seurat 对象（包含 PCA 降维结果）
+#   - seu_integrated：整合后的 Seurat 对象（包含 PCA 降维结果）
 #   - output_dir：保存图形的目录
 #   - reduction = "pca"：使用的降维结果
 #   - dims = c(1, 2)：DimPlot 使用的 PCA 维度（PC1 和 PC2）
@@ -809,7 +809,7 @@ cli::cli_alert_success("保存完成！")
 
 
 # - 使用 visualize_pca 函数可视化 PCA 降维结果，检查细胞周期相关分布
-message("步骤 2.13：可视化和探索 PCA 结果...")
+cli::cli_h2("步骤 2.13：可视化和探索 PCA 结果...")
 
 # 导入 visualize_pca 模块
 source("Rutils/plot_sc_pca.R")
@@ -836,20 +836,21 @@ plot_sc_pca(seu_integrated,
 #     - 指标 2：主成分解释度下降显著（> 0.1%）的最后一个主成分（肘部位置）
 # - 推荐值为以上两个指标中较小者，更稳健、避免噪声干扰
 
-# 导入辅助函数
-source("Rutils/suggest_pcs.R")
+# # 导入辅助函数
+# source("Rutils/suggest_pcs.R")
 
-# 运行推荐函数
-pcs_to_use <- suggest_pcs(seu_integrated, reduction = "pca", verbose = TRUE)
+# # 运行推荐函数
+# pcs_to_use <- suggest_pcs(seu_integrated, reduction = "pca", verbose = TRUE)
 
-# 可选：打印前 10 个 PC 的 top 5 驱动基因（用于手动审阅）
-message("前 10 个主成分的 Top 5 驱动基因如下：")
-print(seu_integrated[["pca"]], dims = 1:10, nfeatures = 5)
+# # 可选：打印前 10 个 PC 的 top 5 驱动基因（用于手动审阅）
+# cli::cli_text("前 10 个主成分的 Top 5 驱动基因如下：")
+# print(seu_integrated[["pca"]], dims = 1:10, nfeatures = 5)
 
 # # 最终选择：基于 SCTransform 的经验值，使用前 40 个 PCs
 # # - SCTransform 更准确，40 个 PCs 是合理的折中（保留足够变异，控制计算复杂度）
 # pcs_to_use <- 40
 # message("最终选择的 PC 数量（基于 SCTransform 经验值）：", pcs_to_use)
+# cli::cli_text("最终选择的 PC 数量（基于 SCTransform 经验值）：{pcs_to_use}")
 #---------------------------------------------------------------------------
 
 
@@ -860,7 +861,7 @@ print(seu_integrated[["pca"]], dims = 1:10, nfeatures = 5)
 # 可选：从 .rds 文件加载 PCA 降维后的 Seurat 对象（跳过步骤 2.1 到 2.12）
 # - 加载路径：processed_data_dir/scFlowKit_pca.rds
 # - 确保 processed_data_dir 已定义
-# sce_integrated <- readRDS(file = file.path(processed_data_dir, "scFlowKit_pca.rds"))
+# seu_integrated <- readRDS(file = file.path(processed_data_dir, "scFlowKit_pca.rds"))
 
 # - 基于 PCA 空间构建细胞间的邻居图
 # - 使用 Seurat 的 FindNeighbors 函数，常用参数：
@@ -869,19 +870,22 @@ print(seu_integrated[["pca"]], dims = 1:10, nfeatures = 5)
 #   - k.param = 20：邻居数量（默认 20）
 #   - verbose = TRUE：显示进度信息
 # - 结果存储在 sce_integrated@graphs 中（包括 integrated_nn 和 integrated_snn）
-message("步骤 3.1：寻找邻居...")
-sce_integrated <- FindNeighbors(sce_integrated,
+
+cli::cli_h2("步骤 3.1：构建邻居图")
+
+# 构建邻居图
+seu_integrated <- FindNeighbors(sce_integrated,
                                 reduction = "pca",
                                 dims = 1:20,  # 使用前 20 个主成分
                                 k.param = 20,  # 邻居数量
                                 verbose = TRUE)
 
-# 输出邻居图信息
-message("邻居图信息：")
-print(names(sce_integrated@graphs))
+# 输出邻居图结构
+cli::cli_alert_success("邻居图构建完成，包含以下图结构：")
+print(names(seu_integrated@graphs))
 
 #-------------------------------------------------------------------------------
-# 步骤 3.2：聚类
+# 步骤 3.2：细胞聚类（FindClusters）
 #-------------------------------------------------------------------------------
 
 # - 基于邻居图（SNN）对细胞进行聚类
@@ -891,43 +895,41 @@ print(names(sce_integrated@graphs))
 #     - 低分辨率（< 0.5）：生成更少、较大的聚类，适合发现大类细胞群
 #   - algorithm = 1：使用原始 Louvain 算法
 #   - verbose = TRUE：显示进度信息
-# - 结果存储在 sce_integrated@meta.data$seurat_clusters 中
+# - 结果存储在 seu_integrated@meta.data$seurat_clusters 中
 
-# 定义多个 resolution 值
+cli::cli_h2("步骤 3.2：细胞聚类")
+
+# 设置聚类分辨率
 resolutions <- c(0.4, 0.6, 0.8, 1.0, 1.4)
-message("测试的 resolution 值：", paste(resolutions, collapse = ", "))
+cli::cli_text("测试的 resolution 值：{paste(resolutions, collapse = ', ')}")
 
-message("步骤 3.2：聚类...")
 # 运行 FindClusters，测试多个 resolution 值
-message("运行 FindClusters（测试多个 resolution 值）...")
-sce_integrated <- FindClusters(sce_integrated,
+cli::cli_text("运行 FindClusters（测试多个 resolution 值）...")
+seu_integrated <- FindClusters(seu_integrated,
                                resolution = resolutions,  # 分辨率，控制聚类数量
                                algorithm = 1,  # 使用原始 Louvain 算法
                                verbose = TRUE)
 
 # 输出每个 resolution 的聚类数量和分布
 for (res in resolutions) {
-  col_name <- paste0("integrated_snn_res.", res)  # 修正列名
-  message("Resolution ", res, " 聚类数量：")
-  print(length(unique(sce_integrated@meta.data[[col_name]])))
-  message("Resolution ", res, " 聚类分布：")
-  print(table(sce_integrated@meta.data[[col_name]]))
+  col_name <- paste0("integrated_snn_res.", res)  
+  cli::cli_text("🔹 Resolution = {res}")
+  cli::cli_text("聚类数量：{length(unique(seu_integrated[[col]]))}")
+  print(table(seu_integrated@meta.data[[col_name]]))
 }
 
 # 最终选择 resolution = 0.8（默认值）
-message("最终选择 resolution = 0.8 进行聚类...")
-sce_integrated@meta.data$seurat_clusters <- sce_integrated@meta.data[["integrated_snn_res.0.8"]]
+cli::cli_text("设置默认聚类 resolution = 0.8")
+seu_integrated$seurat_clusters <- seu_integrated[["integrated_snn_res.0.8"]]
 
 # 输出最终聚类数量和分布
-message("最终聚类数量（resolution = 0.8）：")
-print(length(unique(sce_integrated@meta.data$seurat_clusters)))
-message("最终聚类分布（resolution = 0.8）：")
-print(table(sce_integrated@meta.data$seurat_clusters))
+cli::cli_alert_info("最终聚类数量：{length(unique(seu_integrated$seurat_clusters))}")
+cli::cli_alert_info("最终聚类分布：")
+print(table(seu_integrated$seurat_clusters))
 
 # 保存聚类后的 Seurat 对象（中间点）
-message("保存聚类后的 Seurat 对象...")
-saveRDS(sce_integrated, file = file.path(processed_data_dir, "scFlowKit_clustered.rds"))
-message("已保存至：", file.path(processed_data_dir, "scFlowKit_clustered.rds"))
+saveRDS(seu_integrated, file = file.path(processed_data_dir, "scFlowKit_clustered.rds"))
+cli::cli_alert_success("✅ 已保存至：{file.path(processed_data_dir, 'scFlowKit_clustered.rds')}")
 
 
 #-------------------------------------------------------------------------------
@@ -937,7 +939,7 @@ message("已保存至：", file.path(processed_data_dir, "scFlowKit_clustered.rd
 # 可选：从 .rds 文件加载聚类后的 Seurat 对象（跳过步骤 2.1 到 3.2）
 # - 加载路径：processed_data_dir/scFlowKit_clustered.rds
 # - 确保 processed_data_dir 已定义
-# sce_integrated <- readRDS(file = file.path(processed_data_dir, "scFlowKit_clustered.rds"))
+# seu_integrated <- readRDS(file = file.path(processed_data_dir, "scFlowKit_clustered.rds"))
 
 # - 使用 t-SNE 进行降维，基于 PCA 空间
 # - 使用 Seurat 的 RunTSNE 函数，常用参数：
@@ -946,37 +948,44 @@ message("已保存至：", file.path(processed_data_dir, "scFlowKit_clustered.rd
 #   - seed.use = 1：设置随机种子，确保结果可重复
 #   - dim.embed = 2：降维后的维度（默认 2D）
 #   - verbose = TRUE：显示进度信息
-# - 结果存储在 sce_integrated@reductions$tsne 中
-message("步骤 3.3：运行 t-SNE 降维...")
-sce_integrated <- RunTSNE(sce_integrated,
-               reduction = "pca",  # 使用 PCA 降维结果
-               dims = 1:5,  # 使用前 5 个主成分
-               seed.use = 1,  # 设置随机种子
-               dim.embed = 2,  # 降维到 2D
-               verbose = TRUE)  # 显示进度信息
+# - 结果存储在 seu_integrated@reductions$tsne 中
+
+cli::cli_h2("步骤 3.3：t-SNE 降维与可视化")
+
+# 运行 t-SNE：基于 PCA 降维结果
+seu_integrated <- RunTSNE(seu_integrated,
+                          reduction = "pca",
+                          dims = 1:5,
+                          seed.use = 1,
+                          dim.embed = 2,
+                          verbose = TRUE)
+cli::cli_alert_success("t-SNE 降维完成")
 
 # 输出 t-SNE 降维后的 Seurat 对象信息
-message("t-SNE 降维后的 Seurat 对象基本信息：")
-print(sce_integrated)
+cli::cli_text("Seurat 对象包含的降维信息：{paste(names(seu_integrated@reductions), collapse = ', ')}")
 #  2 dimensional reductions calculated: pca, tsne
 
+#-----------------------------------------------------------------------
 # 可视化 t-SNE 结果
+#-----------------------------------------------------------------------
+
 # - 使用 DimPlot 绘制 t-SNE 散点图，展示 TSNE_1 和 TSNE_2 的分布
 # - 按聚类结果（seurat_clusters）分组，观察聚类效果
-message("可视化 t-SNE 结果...")
 
-tsne_plot_clusters <- DimPlot(sce_integrated, 
-                     reduction = "tsne",  # 使用 t-SNE 降维结果
-                     group.by = "seurat_clusters",  # 按聚类结果分组
-                     label = TRUE,  # 显示分组标签
-                     repel = TRUE) +  # 避免标签重叠
+cli::cli_text("可视化 t-SNE 结果...")
+
+tsne_clusters_plot <- DimPlot(seu_integrated, 
+                              reduction = "tsne",  # 使用 t-SNE 降维结果
+                              group.by = "seurat_clusters",  # 按聚类结果分组
+                              label = TRUE,  # 显示分组标签
+                              repel = TRUE) +  # 避免标签重叠
   labs(title = "t-SNE Plot by Clusters") 
 
-ggsave(file.path(output_dir, "figures/tsne_plot_clusters.png"), tsne_plot_clusters, width = 8, height = 6)
-message("t-SNE 聚类图已保存至：", file.path(output_dir, "figures/tsne_plot_clusters.png"))
+ggsave(file.path(output_dir, "figures/tsne_clusters_plot.png"), tsne_clusters_plot, width = 8, height = 6)
+cli::cli_text("t-SNE 聚类图已保存至：{file.path(output_dir, 'figures/tsne_clusters_plot.png')}")
 
 # 可视化 t-SNE 结果（按细胞周期阶段分组）
-tsne_phase_plot <- DimPlot(sce_integrated, 
+tsne_phase_plot <- DimPlot(seu_integrated, 
                            reduction = "tsne",  # 使用 t-SNE 降维结果
                            group.by = "Phase",  # 按细胞周期阶段分组
                            label = TRUE,  # 显示分组标签
@@ -984,22 +993,22 @@ tsne_phase_plot <- DimPlot(sce_integrated,
   labs(title = "t-SNE Plot by Phase")
 
 ggsave(file.path(output_dir, "figures/tsne_plot_phase.png"), tsne_phase_plot, width = 8, height = 6)
-message("t-SNE 细胞周期图已保存至：", file.path(output_dir, "figures/tsne_plot_phase.png"))
+cli::cli_text("t-SNE 细胞周期图已保存至：{file.path(output_dir, 'figures/tsne_plot_phase.png')}")
 
 # 可视化 t-SNE 结果（按样本分组）
-tsne_plot_sample <- DimPlot(sce_integrated,
+tsne_sample_plot <- DimPlot(seu_integrated,
                             reduction = "tsne",  # 使用 t-SNE 降维结果
                             group.by = "sample",  # 按样本分组
                             label = TRUE,  # 显示分组标签
                             repel = TRUE) +  # 避免标签重叠
   labs(title = "t-SNE Plot by Sample")
 
-ggsave(file.path(output_dir, "figures/tsne_plot_sample.png"), plot = tsne_plot_sample,
+ggsave(file.path(output_dir, "figures/tsne_sample_plot.png"), plot = tsne_sample_plot,
        width = 8, height = 6, dpi = 300)
-message("t-SNE 样本图已保存至：", file.path(output_dir, "figures/tsne_plot_sample.png"))
+cli::cli_text("t-SNE 样本图已保存至：{file.path(output_dir, 'figures/tsne_sample_plot.png')}")
 
 # 按聚类分组，按样本分面
-tsne_plot_clusters_split <- DimPlot(sce_integrated,
+tsne_clusters_plot_split <- DimPlot(seu_integrated,
                                     reduction = "tsne",  # 使用 t-SNE 降维结果
                                     group.by = "seurat_clusters",  # 按聚类分组
                                     split.by = "sample",  # 按样本分面
@@ -1008,12 +1017,12 @@ tsne_plot_clusters_split <- DimPlot(sce_integrated,
   labs(title = "t-SNE Plot by Clusters, Split by Sample")
 
 # 保存 t-SNE 聚类分面图
-ggsave(file.path(output_dir, "figures/tsne_plot_clusters_split_by_sample.png"),
-       plot = tsne_plot_clusters_split,
+ggsave(file.path(output_dir, "figures/tsne_clusters_plot_split_by_sample.png"),
+       plot = tsne_clusters_plot_split,
        width = 12,  # 增加宽度以适应分面
        height = 6,
        dpi = 300)
-message("t-SNE 聚类分面图已保存至：", file.path(output_dir, "figures/tsne_plot_clusters_split_by_sample.png"))  
+cli::cli_text("t-SNE 聚类分面图已保存至：{file.path(output_dir, 'figures/tsne_clusters_plot_split_by_sample.png')}")
 #-------------------------------------------------------------------------------
 
 
@@ -1031,59 +1040,69 @@ message("t-SNE 聚类分面图已保存至：", file.path(output_dir, "figures/t
 #   - seed.use = 1 设置随机种子，确保结果可重复
 #   - verbose = TRUE 显示进度信息
 # - 结果存储在 sce@reductions$umap 中
-message("步骤 3.4：运行 UMAP 降维...")
-sce_integrated <- RunUMAP(sce_integrated,
-               reduction = "pca",
-               dims = 1:10,  # 使用前 10 个主成分
-               n.neighbors = 30,  # 邻居数量
-               min.dist = 0.3,  # 最小距离
-               n.components = 2,  # 降维到 2D
-               seed.use = 1,  # 设置随机种子
-               verbose = TRUE)  # 显示进度信息
 
+cli::cli_h2("步骤 3.4：UMAP 降维与可视化")
+
+seu_integrated <- RunUMAP(seu_integrated,
+                          reduction = "pca",
+                          dims = 1:10,
+                          n.neighbors = 30,
+                          min.dist = 0.3,
+                          n.components = 2,
+                          seed.use = 1,
+                          verbose = TRUE)
+
+cli::cli_alert_success("UMAP 降维完成")
 # 输出 UMAP 降维后的 Seurat 对象信息
-message("UMAP 降维后的 Seurat 对象基本信息：")
-print(sce_integrated)
+# 输出降维信息
+cli::cli_text("Seurat 对象包含的降维信息：{paste(names(seu_integrated@reductions), collapse = ', ')}")
 #  3 dimensional reductions calculated: pca, tsne, umap
 
+#-----------------------------------------------------------------------
 # 可视化 UMAP 结果
+#-----------------------------------------------------------------------
+
 # - 使用 DimPlot 绘制 UMAP 散点图，展示 UMAP_1 和 UMAP_2 的分布
 # - 按聚类结果（seurat_clusters）分组，观察聚类效果
-message("可视化 UMAP 结果...")
 
-umap_plot_clusters <- DimPlot(sce_integrated,
-                     reduction = "umap",  # 使用 UMAP 降维结果
-                     group.by = "seurat_clusters",  # 按聚类结果分组
-                     label = TRUE,  # 显示分组标签
-                     repel = TRUE) +  # 避免标签重叠
+cli::cli_text("绘制 UMAP 聚类图（by seurat_clusters）...")
+
+umap_clusters_plot <- DimPlot(seu_integrated,
+                              reduction = "umap",  # 使用 UMAP 降维结果
+                              group.by = "seurat_clusters",  # 按聚类结果分组
+                              label = TRUE,  # 显示分组标签
+                              repel = TRUE) +  # 避免标签重叠
   labs(title = "UMAP Plot by Clusters")
-ggsave(file.path(output_dir, "figures/umap_plot_clusters.png"), umap_plot_clusters, width = 8, height = 6)
-message("UMAP 聚类图已保存至：", file.path(output_dir, "figures/umap_plot_clusters.png"))
+ggsave(file.path(output_dir, "figures/umap_clusters_plot.png"), umap_clusters_plot, width = 8, height = 6)
+cli::cli_text("✅ 聚类图已保存：{file.path(output_dir, 'figures/umap_clusters_plot.png')}")
 
 # 可视化 UMAP 结果（按细胞周期阶段分组）
-umap_plot_phase <- DimPlot(sce_integrated,
+umap_phase_plot <- DimPlot(seu_integrated,
                            reduction = "umap",  # 使用 UMAP 降维结果
                            group.by = "Phase",  # 按细胞周期阶段分组
                            label = TRUE,  # 显示分组标签
                            repel = TRUE) +  # 避免标签重叠
   labs(title = "UMAP Plot by Phase")
 
-ggsave(file.path(output_dir, "figures/umap_plot_phase.png"), umap_plot_phase, width = 8, height = 6)
+ggsave(file.path(output_dir, "figures/umap_phase_plot.png"), umap_phase_plot, width = 8, height = 6)
+cli::cli_text("✅ 细胞周期图已保存：{file.path(output_dir, 'figures/umap_phase_plot.png')}")
 
 # 按样本分组
-umap_plot_sample <- DimPlot(sce_integrated,
+cli::cli_text("绘制 UMAP 样本图（by sample）...")
+umap_sample_plot <- DimPlot(seu_integrated,
                             reduction = "umap",  # 使用 UMAP 降维结果
                             group.by = "sample",  # 按样本分组
                             label = TRUE,  # 显示分组标签
                             repel = TRUE) +   # 避免标签重叠
   labs(title = "UMAP Plot by Sample")
 
-ggsave(file.path(output_dir, "figures/umap_plot_sample.png"), plot = umap_plot_sample,
+ggsave(file.path(output_dir, "figures/umap_sample_plot.png"), plot = umap_sample_plot,
        width = 8, height = 6, dpi = 300)
-message("UMAP 样本图已保存至：", file.path(output_dir, "figures/umap_plot_sample.png"))
+cli::cli_text("✅ 样本图已保存：{file.path(output_dir, 'figures/umap_sample_plot.png')}")
 
 # 按聚类分组，按样本分面
-umap_plot_clusters_split <- DimPlot(sce_integrated,
+cli::cli_text("绘制 UMAP 聚类分面图（by sample）...")
+umap_clusters_plot_split <- DimPlot(seu_integrated,
                                     reduction = "umap",  # 使用 UMAP 降维结果
                                     group.by = "seurat_clusters",  # 按聚类分组
                                     split.by = "sample",  # 按样本分面
@@ -1092,48 +1111,59 @@ umap_plot_clusters_split <- DimPlot(sce_integrated,
   labs(title = "UMAP Plot by Clusters, Split by Sample")
 
 # 保存 UMAP 聚类分面图
-ggsave(file.path(output_dir, "figures/umap_plot_clusters_split_by_sample.png"),
-       plot = umap_plot_clusters_split,
+ggsave(file.path(output_dir, "figures/umap_clusters_plot_split_by_sample.png"),
+       plot = umap_clusters_plot_split,
        width = 12,  # 增加宽度以适应分面
        height = 6,
        dpi = 300)
-message("UMAP 聚类分面图已保存至：", file.path(output_dir, "figures/umap_plot_clusters_split_by_sample.png"))
+cli::cli_text("✅ 分面图已保存：{file.path(output_dir, 'figures/umap_clusters_plot_split_by_sample.png')}")
 #-------------------------------------------------------------------------------
 
 
 #-------------------------------------------------------------------------------
-# 步骤 3.5：保存聚类结果
+# 步骤 3.5：保存聚类结果与降维坐标
 #-------------------------------------------------------------------------------
 
-# - 保存包含聚类和降维结果的 Seurat 对象为 Rds 文件
+# - 保存包含聚类和降维结果的 Seurat 对象为 rds 文件
 # - 文件路径：processed_data_dir/scFlowKit_umap.rds
 # - 包含质控、过滤、标准化、可变基因选择、细胞周期评分、缩放、降维（PCA、t-SNE、UMAP）、双细胞去除和聚类的结果
-message("步骤 3.5：保存聚类结果...")
+
+cli::cli_h2("步骤 3.5：保存聚类结果与降维坐标")
+
+# 创建输出目录（如不存在）
 dir.create(processed_data_dir, recursive = TRUE, showWarnings = FALSE)
-saveRDS(sce_integrated, file = file.path(processed_data_dir, "scFlowKit_umap.rds"))
-message("聚类结果已保存至：", file.path(processed_data_dir, "scFlowKit_umap.rds"))
+
+# 保存 Seurat 对象（含聚类与全部降维结果）
+rds_path <- file.path(processed_data_dir, "scFlowKit_umap.rds")
+saveRDS(seu_integrated, file = rds_path)
+cli::cli_alert_success("Seurat 对象已保存至：{rds_path}")
+
+#-------------------------------------------------------------------------------
+# 导出 PCA / t-SNE / UMAP 降维坐标
+#-------------------------------------------------------------------------------
 
 # - 使用 Embeddings 提取降维结果并保存为 CSV 文件
 # - 提取 PCA、t-SNE 和 UMAP 的降维坐标
 # - 保存路径：processed_data_dir/
-message("保存降维结果（PCA、t-SNE、UMAP）...")
 
-# 提取 PCA 降维坐标
-pca_embeddings <- Embeddings(sce_integrated, reduction = "pca")
-write.csv(pca_embeddings, file = file.path(processed_data_dir, "scFlowKit_pca_embeddings.csv"), row.names = TRUE)
+cli::cli_text("📦 提取并保存降维坐标至 CSV 文件...")
 
-# 提取 t-SNE 降维坐标
-tsne_embeddings <- Embeddings(sce_integrated, reduction = "tsne")
-write.csv(tsne_embeddings, file = file.path(processed_data_dir, "scFlowKit_tsne_embeddings.csv"), row.names = TRUE)
+# 提取并保存 PCA 坐标
+pca_path <- file.path(processed_data_dir, "scFlowKit_pca_embeddings.csv")
+write.csv(Embeddings(seu_integrated, "pca"), pca_path, row.names = TRUE)
 
-# 提取 UMAP 降维坐标
-umap_embeddings <- Embeddings(sce_integrated, reduction = "umap")
-write.csv(umap_embeddings, file = file.path(processed_data_dir, "scFlowKit_umap_embeddings.csv"), row.names = TRUE)
+# 提取并保存 t-SNE 坐标
+tsne_path <- file.path(processed_data_dir, "scFlowKit_tsne_embeddings.csv")
+write.csv(Embeddings(seu_integrated, "tsne"), tsne_path, row.names = TRUE)
 
-message("降维结果已保存至：")
-message("PCA 降维坐标：", file.path(processed_data_dir, "scFlowKit_pca_embeddings.csv"))
-message("t-SNE 降维坐标：", file.path(processed_data_dir, "scFlowKit_tsne_embeddings.csv"))
-message("UMAP 降维坐标：", file.path(processed_data_dir, "scFlowKit_umap_embeddings.csv"))
+# 提取并保存 UMAP 坐标
+umap_path <- file.path(processed_data_dir, "scFlowKit_umap_embeddings.csv")
+write.csv(Embeddings(seu_integrated, "umap"), umap_path, row.names = TRUE)
+
+cli::cli_alert_success("降维坐标已保存：")
+cli::cli_text(" - PCA：{pca_path}")
+cli::cli_text(" - t-SNE：{tsne_path}")
+cli::cli_text(" - UMAP：{umap_path}")
 
 
 #-------------------------------------------------------------------------------
