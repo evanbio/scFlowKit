@@ -724,7 +724,7 @@ seu_integrated <- run_integration(seu_list,
 
 # 保存整合后的 Seurat 对象（中间点）
 cli::cli_text("保存整合后的 Seurat 对象...")
-saveRDS(sce, file = file.path(processed_data_dir, "scFlowKit_integrated.rds"))
+saveRDS(seu, file = file.path(processed_data_dir, "scFlowKit_integrated.rds"))
 cli::cli_alert_success("已保存至：{file.path(processed_data_dir, 'scFlowKit_integrated.rds')}")
 
 

@@ -18,7 +18,7 @@
 
 # run_integration: 运行 Seurat 整合
 # 参数:
-#   sce_list: Seurat 对象列表（可以是单个 Seurat 对象 list(sce) 或分组后的列表 list(donor1, donor2, ...)）
+#   seu_list: Seurat 对象列表（可以是单个 Seurat 对象 list(seu) 或分组后的列表 list(donor1, donor2, ...)）
 #   method: 整合方法（"none", "cca", "harmony"，默认 "cca"）
 #   assay: 输入的 assay 名称（默认 "SCT"，也可为 "RNA")
 #   k.anchor: 寻找 anchors 时的 k 参数（默认 5，仅在 method = "cca" 时有效）
@@ -34,7 +34,7 @@
 #   verbose: 是否显示进度信息（默认 TRUE）
 # 返回:
 #   运行整合后的 Seurat 对象（根据 method 不同，包含 integrated assay 或 harmony 降维结果）
-run_integration <- function(sce_list,
+run_integration <- function(seu_list,
                             method = "cca",
                             assay = "SCT",
                             k.anchor = 5,
@@ -48,31 +48,32 @@ run_integration <- function(sce_list,
                             harmony.sigma = 0.1,
                             variable.features.n = 2000,
                             verbose = TRUE) {
-  # 验证输入参数：sce_list 必须提供
-  if (is.null(sce_list)) {
-    stop("必须提供 'sce_list' 参数！", call. = FALSE)
+
+  cli::cli_h2("🧩 整合 Seurat 对象")
+
+  # ---------------- 参数检查 ------------------
+
+  # 验证输入参数：seu_list 必须提供
+  if (is.null(seu_list)) {
+    stop("必须提供 'seu_list' 参数！", call. = FALSE)
   }
   
-  # 如果 sce_list 是单个 Seurat 对象，转换为列表
-  if (inherits(sce_list, "Seurat")) {
-    sce_list <- list(sce_list)
+  # 如果 seu_list 是单个 Seurat 对象，转换为列表
+  if (inherits(seu_list, "Seurat")) {
+    seu_list <- list(seu_list)
+  }
+
+  # 验证 seu_list 的每个元素是否为 Seurat 对象
+  if (!all(sapply(seu_list, inherits, "Seurat"))) {
+    stop("参数 'seu_list' 的每个元素必须为 Seurat 对象！", call. = FALSE)
   }
   
-  # 验证 sce_list 的每个元素是否为 Seurat 对象
-  if (!all(sapply(sce_list, inherits, "Seurat"))) {
-    stop("参数 'sce_list' 的每个元素必须为 Seurat 对象！", call. = FALSE)
-  }
-  
-  # 检测输入类型并打印提示信息
-  total_cells <- sum(sapply(sce_list, ncol))
-  if (length(sce_list) == 1) {
-    message("检测到输入为单个 Seurat 对象（包含 ", total_cells, " 个细胞）。")
-  } else {
-    message("检测到输入为分组的 Seurat 对象列表（包含 ", length(sce_list), " 个样本，", total_cells, " 个细胞）。")
-  }
+  # 检测输入类型并打印提示细胞信息
+  total_cells <- sum(sapply(seu_list, ncol))
+  cli::cli_text("包含 {length(seu_list)} 个对象，共 {total_cells} 个细胞")
   
   # 验证 assay 是否存在
-  if (!all(sapply(sce_list, function(x) assay %in% names(x@assays)))) {
+  if (!all(sapply(seu_list, function(x) assay %in% names(x@assays)))) {
     stop("参数 'assay' 必须存在于所有 Seurat 对象的 assay 中！", call. = FALSE)
   }
   
@@ -136,44 +137,46 @@ run_integration <- function(sce_list,
     stop("参数 'verbose' 必须为逻辑值！", call. = FALSE)
   }
   
-  # 加载 Seurat 包
-  library(Seurat)
+  # ---------------- 环境准备 ----------------
+  suppressPackageStartupMessages(library(Seurat))
   
-  # 根据 method 选择整合方式
+  # ========== method = "none" ==========
   if (method == "none") {
     # 不整合：检查输入是否为单个 Seurat 对象
-    if (length(sce_list) > 1) {
-      stop("不整合（method = 'none'）需要所有样本一起运行 SCTransform，输入为分组的 Seurat 对象列表（包含 ", length(sce_list), " 个样本，", total_cells, " 个细胞）。请重新运行 SCTransform，不设置 split.by 参数。")
+    if (length(seu_list) > 1) {
+      stop("使用 method = 'none' 时，输入对象应为单个 Seurat！")
     }
-    message("输入为单个 Seurat 对象（包含 ", total_cells, " 个细胞），直接返回...")
-    sce_list <- sce_list[[1]]
-    message("不整合完成！")
-    message("Seurat 对象基本信息：")
-    print(sce_list)
-    return(sce_list)
+    cli::cli_text("未执行整合，直接返回单对象")
+    seu <- seu_list[[1]]
+
+    cli::cli_text("Seurat 对象基本信息：")
+    print(seu)
+    return(seu)
+
+  # ========== method = "cca" ==========
   } else if (method == "cca") {
     # CCA 整合：需要分组的 Seurat 对象列表
-    if (length(sce_list) == 1) {
-      stop("CCA 整合（method = 'cca'）需要分组的 Seurat 对象列表，输入为单个 Seurat 对象（包含 ", total_cells, " 个细胞）。请重新运行 SCTransform，设置 split.by 参数（例如 split.by = 'sample'）。")
+    if (length(seu_list) == 1) {
+      stop("CCA 整合需要多个分组对象，请检查 split.by 设置")
     }
-    message("使用 CCA 方法进行整合...")
+
+    cli::cli_text("使用 CCA 方法进行整合...")
     # 选择高变基因（anchor features）
-    message("选择高变基因（anchor features）...")
-    anchor_features <- SelectIntegrationFeatures(object.list = sce_list,
+    cli::cli_text("选择高变基因 (n = {variable.features.n})")
+
+    anchor_features <- SelectIntegrationFeatures(object.list = seu_list,
                                                  nfeatures = variable.features.n,
-                                                 # assay = rep(assay, length(sce_list)),
                                                  verbose = verbose)
     # 准备 SCTransform 数据
-    message("准备 SCTransform 数据...")
-    sce_list <- PrepSCTIntegration(object.list = sce_list,
+    cli::cli_text("准备整合输入数据...")
+    seu_list <- PrepSCTIntegration(object.list = seu_list,
                                    anchor.features = anchor_features,
-                                   # assay = rep(assay, length(sce_list)),
                                    verbose = verbose)
+    
     # 寻找整合 anchors
-    message("寻找整合 anchors...")
-    message("过程需要花费一段时间...")
-    anchors <- FindIntegrationAnchors(object.list = sce_list,
-                                      # assay = rep(assay, length(sce_list)),
+    cli::cli_text("查找 anchors...")
+    cli::cli_text("过程需要花费一段时间...")
+    anchors <- FindIntegrationAnchors(object.list = seu_list,
                                       normalization.method = "SCT",
                                       reduction = method,
                                       anchor.features = anchor_features,
@@ -183,63 +186,70 @@ run_integration <- function(sce_list,
                                       dims = dims,
                                       verbose = verbose)
     # 运行整合
-    message("运行整合...")
-    sce_integrated <- IntegrateData(anchorset = anchors,
+    cli::cli_text("执行数据整合...")
+    seu_integrated <- IntegrateData(anchorset = anchors,
                                     new.assay.name = new.assay.name,
                                     normalization.method = "SCT",
                                     dims = dims,
                                     verbose = verbose)
-    message("整合完成！")
-    message("整合后的 Seurat 对象基本信息：")
-    print(sce_integrated)
-    return(sce_integrated)
+                                    
+    cli::cli_alert_success("整合完成！")
+
+    cli::cli_text("整合后的 Seurat 对象基本信息：")
+    print(seu_integrated)
+    return(seu_integrated)
+
+  # ========== method = "harmony" ==========
   } else if (method == "harmony") {
+
+    if (!requireNamespace("harmony", quietly = TRUE)) {
+      stop("未检测到 harmony 包，请先安装！", call. = FALSE)
+    }
+
     # Harmony 整合：需要单个 Seurat 对象
-    message("使用 Harmony 方法进行整合...")
-    if (length(sce_list) == 1) {
-      message("输入为单个 Seurat 对象（包含 ", total_cells, " 个细胞），直接进行 PCA 和 Harmony 整合...")
-      seurat_obj <- sce_list[[1]]
+    cli::cli_text("使用 Harmony 方法进行整合...")
+    if (length(seu_list) == 1) {
+      seu <- seu_list[[1]]
     } else {
-      message("输入为分组的 Seurat 对象列表（包含 ", length(sce_list), " 个样本，", total_cells, " 个细胞），将合并所有样本...")
+      cli::cli_text("合并所有对象用于 Harmony 整合...")
+
       # 选择高变基因
-      message("选择高变基因...")
-      var_features <- SelectIntegrationFeatures(object.list = sce_list,
+      cli::cli_text("选择高变基因...")
+      var_features <- SelectIntegrationFeatures(object.list = seu_list,
                                                 nfeatures = variable.features.n,
-                                                assay = rep(assay, length(sce_list)),
+                                                assay = rep(assay, length(seu_list)),
                                                 verbose = verbose)
       # 合并所有样本
-      message("合并所有样本...")
-      seurat_obj <- merge(sce_list[[1]], sce_list[-1], merge.data = TRUE)
+      cli::cli_text("合并所有样本...")
+      seu <- merge(seu_list[[1]], seu_list[-1], merge.data = TRUE)
+
       # 设置默认 assay 为 SCT
-      DefaultAssay(seurat_obj) <- assay
+      DefaultAssay(seu) <- assay
       # 设置高变基因
-      VariableFeatures(seurat_obj, assay = assay) <- var_features
+      VariableFeatures(seu, assay = assay) <- var_features
     }
+
     # 运行 PCA
-    message("运行 PCA...")
-    seurat_obj <- RunPCA(seurat_obj,
-                         assay = assay,
-                         npcs = npcs,
-                         verbose = verbose)
+    cli::cli_text("运行 PCA...")
+    seu <- RunPCA(seu,
+                  assay = assay,
+                  npcs = npcs,
+                  verbose = verbose)
+
     # 运行 Harmony
-    message("运行 Harmony 整合...")
-    if (!requireNamespace("harmony", quietly = TRUE)) {
-      stop("Harmony 整合需要安装 harmony 包，请安装：\n",
-           "if (!requireNamespace('BiocManager', quietly = TRUE))\n",
-           "    install.packages('BiocManager')\n",
-           "BiocManager::install('harmony')")
-    }
-    library(harmony)
-    sce_integrated <- RunHarmony(seurat_obj,
+    cli::cli_text("运行 Harmony...")
+
+    seu_integrated <- RunHarmony(seu,
                                  group.by.vars = harmony.group.by,
                                  theta = harmony.theta,
                                  sigma = harmony.sigma,
                                  dims.use = dims,
                                  verbose = verbose)
-    message("整合完成！")
-    message("整合后的 Seurat 对象基本信息：")
-    print(sce_integrated)
-    return(sce_integrated)
+
+    cli::cli_alert_success("Harmony 整合完成！")
+    cli::cli_alert_success("整合后的 Seurat 对象基本信息：")
+    print(seu_integrated)
+    return(seu_integrated)
   }
 }
 
