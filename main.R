@@ -333,11 +333,6 @@ saveRDS(seu, file = file.path(processed_data_dir, "scFlowKit_filtered.rds"))
 cli::cli_alert_success("✅ 已保存：{file.path(processed_data_dir, 'scFlowKit_filtered.rds')}")
 
 #-------------------------------------------------------------------------------
-
-#-------------------------------------------------------------------------------
-
-
-#-------------------------------------------------------------------------------
 # 步骤 2.4：标准化和对数化数据
 #-------------------------------------------------------------------------------
 
@@ -345,30 +340,31 @@ cli::cli_alert_success("✅ 已保存：{file.path(processed_data_dir, 'scFlowKi
 # - 加载路径：processed_data_dir/scFlowKit_filtered.rds
 # - 确保 processed_data_dir 已定义
 # sce <- readRDS(file.path(processed_data_dir, "scFlowKit_filtered.rds"))
-
+# 
+# 📊 标准化（Normalization）+ 对数化（Log-Transformation）
 # - 标准化：将每个细胞的总表达量缩放到 10,000
 # - 对数化：log1p 变换，稳定数据分布
 # - 使用 Seurat 的 NormalizeData 函数，参数：
 #   - normalization.method = "LogNormalize" 指定标准化方法，可选 "LogNormalize" 或 "CLR"
 #   - scale_factor = 10000 指定缩放因子
-message("步骤 2.4：标准化和对数化数据...")
-sce <- NormalizeData(sce,
-                     normalization.method = "LogNormalize",
-                     scale.factor = 10000)  # 默认缩放因子为 10000
 
-# 提示用户标准化完成
-message("数据标准化和对数化完成！")
+cli::cli_h2("🧮 步骤 2.4：标准化与对数化数据")
 
-# 输出标准化后的 Seurat 对象信息
-message("标准化后的 Seurat 对象基本信息：")
-print(sce) # 标准化后的 Seurat 对象会增加一个 data 层
+seu <- Seurat::NormalizeData(
+  object = seu,
+  normalization.method = "LogNormalize",
+  scale.factor = 10000
+)
 
-# 检查数据层，确认标准化结果
-message("标准化后的数据层：")
-print(SeuratObject::Layers(sce))
+cli::cli_alert_success("✅ 数据标准化与对数化完成！")
 
-#-------------------------------------------------------------------------------
+# 查看标准化后的 Seurat 对象基本信息
+cli::cli_text("📦 Seurat 对象结构（标准化后）:")
+print(seu) # 标准化后的 Seurat 对象会增加一个 data 层
 
+# 确认数据层结构，检查是否生成 data 层
+cli::cli_text("📚 当前数据层（slots/layers）：")
+print(SeuratObject::Layers(seu))
 
 #-------------------------------------------------------------------------------
 # 步骤 2.5：寻找可变基因
@@ -381,43 +377,52 @@ print(SeuratObject::Layers(sce))
 #   - verbose = TRUE 显示进度条
 # - 可变基因存储在 sce@assays$RNA@var.features 中
 # - 基因的均值和方差存储在 sce@assays$RNA@meta.data 中（Seurat 5.0 及以上版本）
-message("步骤 2.5：寻找可变基因...")
-sce <- FindVariableFeatures(sce,
-                            selection.method = "vst",
-                            nfeatures = 2000,  # 选择 2000 个高变异基因
-                            verbose = TRUE)  # 显示进度条
+
+cli::cli_h2("🚀 步骤 2.5：寻找可变基因")
+
+seu <- Seurat::FindVariableFeatures(
+  object = seu,
+  selection.method = "vst",  # 使用 VST 方法
+  nfeatures = 2000,          # 选择 2000 个高变基因
+  verbose = TRUE             # 显示进度条
+)
 
 # 提取全部可变基因名称（使用 VariableFeatures）
-all_variable_genes <- VariableFeatures(sce)
-message("找到的可变基因数量：", length(all_variable_genes))
+all_variable_genes <- Seurat::VariableFeatures(seu)
+cli::cli_alert_info("共检测到 {length(all_variable_genes)} 个可变基因")
 
 # 提取可变基因名称，打印变化最大的 10 个基因
 top_variable_genes <- head(all_variable_genes, 10)
-message("变化最大的 10 个可变基因：", paste(top_variable_genes, collapse = ", "))
+cli::cli_text("Top 10 可变基因：{paste(top_variable_genes, collapse = ', ')}")
 
-# 可视化可变基因
-# - 使用 VariableFeaturePlot 绘制均值-方差散点图，常用参数：
-#   - log = NULL,  # 默认根据数据决定
-#   - col = c("black", "red") 指定非高变异基因和高变异基因的颜色
-#   - pt.size = 1 指定点的大小
-# - 使用 LabelPoints 标注变化最大的 10 个基因，常用参数：
-#   - points 要标注的基因名称，字符向量
-#   - repel = TRUE 避免标签重叠
-#   - xnudge/ynudge 调整标签位置（默认 0）
-# - 保存为 output_dir/figures/variable_features_plot.png
-message("绘制可变基因散点图...")
-variable_feature_plot <- VariableFeaturePlot(sce,
-                                             log = NULL,  # 默认根据数据决定
-                                             col = c("black", "red"),  # 非高变异基因黑色，高变异基因红色
-                                             pt.size = 1)  # 点的大小
-variable_feature_plot <- LabelPoints(plot = variable_feature_plot,
-                                     points = top_variable_genes,
-                                     repel = TRUE,  # 避免标签重叠
-                                     xnudge = 0.3,  # 标签水平偏移
-                                     ynudge = 0.05)  # 标签垂直偏移
-ggsave(file.path(output_dir, "figures/variable_features_plot.png"), plot = variable_feature_plot, width = 8, height = 6)
+# 📊 可视化：均值-方差散点图 + top 10 基因标注
+cli::cli_text("🎨 绘制可变基因散点图...")
 
-#-------------------------------------------------------------------------------
+variable_feature_plot <- Seurat::VariableFeaturePlot(
+  object = seu,
+  log = NULL,                      # 默认根据数据决定
+  col = c("black", "red"),         # 黑色 = 普通基因，红色 = 高变基因
+  pt.size = 1                      # 点大小
+)
+
+variable_feature_plot <- Seurat::LabelPoints(
+  plot = variable_feature_plot,
+  points = top_variable_genes,
+  repel = TRUE,                   # 避免标签重叠
+  xnudge = 0.3,
+  ynudge = 0.05
+)
+
+# 保存散点图
+ggsave(
+  filename = file.path(output_dir, "figures", "variable_features_plot.png"),
+  plot = variable_feature_plot,
+  width = 8,
+  height = 6
+)
+
+cli::cli_alert_success("✅ 可变基因散点图保存成功：figures/variable_features_plot.png")
+
 
 
 #-------------------------------------------------------------------------------
@@ -434,21 +439,26 @@ ggsave(file.path(output_dir, "figures/variable_features_plot.png"), plot = varia
 #   - G2M.Score > 0 且高于 S.Score：G2/M 期
 #   - 两者均低或接近：G1 期
 # - 放在 ScaleData 之前，以便 ScaleData 可以回归掉细胞周期影响
-message("步骤 2.6：细胞周期评分...")
-message("S 期基因数量：", length(cc.genes$s.genes))
-message("G2/M 期基因数量：", length(cc.genes$g2m.genes))
 
-sce <- CellCycleScoring(sce,
-                        s.features = cc.genes$s.genes,
-                        g2m.features = cc.genes$g2m.genes,
-                        set.ident = FALSE)
+cli::cli_h2("🔬 步骤 2.6：细胞周期评分")
 
-# 输出细胞周期评分结果（前几行元数据）
-message("细胞周期评分结果（前几行元数据）：")
-print(head(sce@meta.data[, c("S.Score", "G2M.Score", "Phase")]))
+# 打印基因集数量
+cli::cli_text("S 期基因数：{length(Seurat::cc.genes$s.genes)}")
+cli::cli_text("G2/M 期基因数：{length(Seurat::cc.genes$g2m.genes)}")
 
-#-------------------------------------------------------------------------------
+# 进行评分
+seu <- Seurat::CellCycleScoring(
+  object = seu,
+  s.features = Seurat::cc.genes$s.genes,
+  g2m.features = Seurat::cc.genes$g2m.genes,
+  set.ident = FALSE
+)
 
+# 查看评分结果（前 6 个细胞）
+cli::cli_alert_info("细胞周期评分结果（前 6 个细胞）：")
+print(head(seu@meta.data[, c("S.Score", "G2M.Score", "Phase")]))
+
+cli::cli_alert_success("✅ 细胞周期评分完成！")
 
 #-------------------------------------------------------------------------------
 # 步骤 2.7：数据缩放（为双细胞检测准备）
@@ -465,36 +475,29 @@ print(head(sce@meta.data[, c("S.Score", "G2M.Score", "Phase")]))
 # - 这里选择使用高变异基因（features = VariableFeatures(sce)），以减少计算量
 # - 结果存储在 sce[["RNA"]]$scale.data 中
 
-message("步骤 2.7：数据缩放（为双细胞检测准备）...")
-sce <- ScaleData(sce,
-                 features = VariableFeatures(sce),  # 使用高变异基因
-                 vars.to.regress = NULL,  # 不回归任何变量（可设置为 c("S.Score", "G2M.Score")）
-                 scale.max = 10,  # 缩放后表达量最大值
-                 do.scale = TRUE,  # 进行缩放
-                 do.center = TRUE,  # 进行中心化
-                 verbose = TRUE)  # 显示进度信息
+cli::cli_h2("📐 步骤 2.7：数据缩放（为双细胞检测准备）")
 
-# 输出缩放后的 Seurat 对象信息
-message("缩放后的 Seurat 对象基本信息：")
-print(sce)
+seu <- Seurat::ScaleData(
+  object = seu,
+  features = VariableFeatures(sce),  # 使用高变异基因
+  vars.to.regress = NULL,  # 不回归任何变量（可设置为 c("S.Score", "G2M.Score")）
+  scale.max = 10,  # 缩放后表达量最大值
+  do.scale = TRUE,  # 进行缩放
+  do.center = TRUE,  # 进行中心化
+  verbose = TRUE)  # 显示进度信息  
 
-# 打印 scale.data 的前 5 个基因和前 5 个细胞
-message("scale.data 前 5 个基因和前 5 个细胞：")
-print(sce[["RNA"]]$scale.data[1:5, 1:5])
 
-# 打印 scale.data 的前 5 个基因和前 5 个细胞
-message("scale.data 前 5 个基因和前 5 个细胞：")
-print(sce[["RNA"]]$scale.data[1:5, 1:5])
+# 打印 Seurat 对象基本信息
+cli::cli_text("✅ 数据缩放完成，Seurat 对象信息如下：")
+print(seu)
 
-#-------------------------------------------------------------------------------
-
+# 展示缩放数据示例
+cli::cli_text("缩放后表达矩阵（前 5 个基因 × 前 5 个细胞）：")
+print(seu[["RNA"]]@scale.data[1:5, 1:5])
 
 #-------------------------------------------------------------------------------
 # 步骤 2.8：PCA 降维及可视化（为双细胞检测准备）
 #-------------------------------------------------------------------------------
-
-# 导入 PCA 可视化模块
-source("Rutils/pre_visualize_pca.R")
 
 # - 使用 PCA 进行降维，基于高变异基因
 # - 使用 Seurat 的 RunPCA 函数，常用参数：
@@ -502,61 +505,81 @@ source("Rutils/pre_visualize_pca.R")
 #   - npcs = 50 选择前 50 个主成分（可调整）
 #   - verbose = TRUE 显示进度信息
 # - 结果存储在 sce@reductions$pca 中
-message("步骤 2.8：降维（PCA）...")
-sce <- RunPCA(sce,
-              features = VariableFeatures(sce),  # 使用高变异基因（默认）
-              npcs = 50,  # 计算前 50 个主成分
-              verbose = TRUE)  # 显示进度信息
+
+cli::cli_h2("📉 步骤 2.8：PCA 降维及可视化")
+
+# ----------------- PCA 降维 -----------------
+cli::cli_text("🚀 运行 PCA（基于高变异基因）...")
+seu <- Seurat::RunPCA(
+  object = seu,
+  features = Seurat::VariableFeatures(seu), # 默认使用高变异基因
+  npcs = 50,
+  verbose = TRUE
+)
 
 # 输出降维后的 Seurat 对象信息
-message("降维后的 Seurat 对象基本信息：")
-print(sce)
+cli::cli_text("✅ PCA 结果已添加至 reductions$pca 中")
+print(seu)
 
 
 # 可视化 PCA 结果
-# 第一组图：细胞周期相关
+source("Rutils/plot_sc_pca.R")
+
+# ----------------- 可视化 PCA（细胞周期相关） -----------------
 # - 第一行：按 sample 和 Phase 分组
 # - 第二行：按 Phase 分组，按 Phase 分面
-# - 保存为 output_dir/figures/preliminary_pca_Phase.png
-message("可视化 PCA 结果（细胞周期相关）...")
-pre_visualize_pca(sce,
-                  output_dir = output_dir,
-                  reduction = "pca",
-                  group.by = "Phase",
-                  split.by = "Phase",
-                  width = 10,
-                  height = 10)
+# - 保存为 output_dir/figures/preliminary_phase_pca_dimplot.png
+cli::cli_text("🎨 可视化 PCA：按细胞周期分组...")
+plot_sc_pca(
+  seu,
+  output_dir = output_dir,
+  reduction = "pca",
+  group.by = "Phase",
+  split.by = "Phase",
+  prefix = "preliminary_phase",       # <--- 设置前缀避免冲突
+  plot_elbow = TRUE,      # <--- 是否绘制 ElbowPlot
+  plot_heatmap = TRUE,    # <--- 是否绘制 Heatmap
+  width = 10,
+  height = 10
+)
 
 # 对连续变量进行分段
-# - 对 percent_mito 进行四分位数分段，生成 percent_mito_binned
-message("对连续变量进行分段...")
-if (is.numeric(head(sce@meta.data$percent_mito, 3))) {
-  quartiles <- quantile(sce@meta.data$percent_mito, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE)
-  sce@meta.data$percent_mito_binned <- cut(sce@meta.data$percent_mito,
-                                           breaks = quartiles,
-                                           labels = c("Q1", "Q2", "Q3", "Q4"),
-                                           include.lowest = TRUE)
+# ----------------- 分段处理 percent_mito -----------------
+cli::cli_text("🔢 分段处理线粒体比例 percent_mito...")
+if (is.numeric(head(seu@meta.data$percent_mito, 3))) {
+  quartiles <- quantile(seu@meta.data$percent_mito, probs = c(0, 0.25, 0.5, 0.75, 1), na.rm = TRUE)
+  seu@meta.data$percent_mito_binned <- cut(
+    seu@meta.data$percent_mito,
+    breaks = quartiles,
+    labels = c("Q1", "Q2", "Q3", "Q4"),
+    include.lowest = TRUE
+  )
 }
 
-# 第二组图：线粒体比例相关
+# ----------------- 可视化 PCA（线粒体比例分段） -----------------
 # - 第一行：按 sample 和 percent_mito 分组
 # - 第二行：按 percent_mito 分组，按 percent_mito 分面
-# - 保存为 output_dir/figures/preliminary_pca_percent_mito_binned.png
-# message("可视化 PCA 结果（线粒体比例相关）...")
-pre_visualize_pca(sce,
-                  output_dir = output_dir,
-                  reduction = "pca",
-                  group.by = "percent_mito_binned",
-                  split.by = "percent_mito_binned",
-                  width = 10,
-                  height = 10)
+# - 保存为 output_dir/figures/preliminary_mito_binned_pca_dimplot.png
+cli::cli_text("🎨 可视化 PCA：按线粒体比例分段分组...")
+plot_sc_pca(
+  seu,
+  output_dir = output_dir,
+  reduction = "pca",
+  group.by = "percent_mito_binned",
+  split.by = "percent_mito_binned",
+  prefix = "preliminary_mito_binned",     # <--- 避免覆盖
+  plot_elbow = FALSE,
+  plot_heatmap = FALSE,
+  width = 10,
+  height = 10
+)
 
-message("PCA 散点图已保存至：")
-message("- 细胞周期相关：", file.path(output_dir, "figures", "preliminary_pca_Phase.png"))
-message("- 线粒体比例相关：", file.path(output_dir, "figures", "percent_mito_binned.png"))
-
+# ----------------- 输出路径提示 -----------------
+cli::cli_alert_success("🎯 PCA 图表已保存：")
+cli::cli_text("- 细胞周期 PCA 图：{file.path(output_dir, 'figures', 'preliminary_phase_pca_dimplot.png')}")
+cli::cli_text("- 线粒体 PCA 图：{file.path(output_dir, 'figures', 'preliminary_mito_binned_pca_dimplot.png')}")
+cli::cli_text("📁 图表目录：{file.path(output_dir, 'figures')}")
 #-------------------------------------------------------------------------------
-
 
 #-------------------------------------------------------------------------------
 # 步骤 2.9：双细胞检测和去除

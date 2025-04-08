@@ -1,10 +1,9 @@
-# Rutils/visualize_pca.R
+# Rutils/plot_sc_pca.R
 #-------------------------------------------------------------------------------
-
 # scFlowKit: Visualize PCA Results for Single-Cell RNA-seq Data
 #-------------------------------------------------------------------------------
-
-# visualize_pca: 可视化 PCA 结果
+# 
+# plot_sc_pca: 可视化单细胞 PCA 降维结果
 # 参数:
 #   sce: Seurat 对象，包含 PCA 降维结果
 #   output_dir: 输出目录，用于保存 PCA 图
@@ -16,18 +15,24 @@
 #   width: 保存图片的宽度，默认 10
 #   height: 保存图片的高度，默认 10
 #   dpi: 图形分辨率，默认 300
+#
 # 返回:
 #   无返回值，直接保存 DimPlot、ElbowPlot 和 DimHeatmap到指定目录
-visualize_pca <- function(sce,
-                          output_dir,
-                          reduction = "pca",
-                          dims = c(1, 2),
-                          group.by = "sample",
-                          split.by = "sample",
-                          ndims = 50,
-                          width = 10,
-                          height = 10,
-                          dpi = 300) {
+plot_sc_pca <- function(sce,
+                        output_dir,
+                        reduction = "pca",
+                        dims = c(1, 2),
+                        group.by = "sample",
+                        split.by = "sample",
+                        ndims = 50,
+                        prefix = NULL,
+                        plot_elbow = FALSE,
+                        plot_heatmap = FALSE,
+                        width = 10,
+                        height = 10,
+                        dpi = 300) {
+
+  # ------------------------- 参数检查 -------------------------                          
   # 验证输入参数是否为 Seurat 对象
   if (!inherits(sce, "Seurat")) {
     stop("参数 'sce' 必须为 Seurat 对象！", call. = FALSE)
@@ -63,17 +68,39 @@ visualize_pca <- function(sce,
     stop("参数 'ndims' 必须为正整数！", call. = FALSE)
   }
 
+  if (!is.null(prefix) && (!is.character(prefix) || length(prefix) != 1)) {
+    stop("参数 'prefix' 必须为长度为 1 的字符向量，或设为 NULL！", call. = FALSE)
+  }
+
+  if (!is.logical(plot_elbow) || length(plot_elbow) != 1) {
+    stop("参数 'plot_elbow' 必须为单一逻辑值（TRUE 或 FALSE）！", call. = FALSE)
+  }
+
+  if (!is.logical(plot_heatmap) || length(plot_heatmap) != 1) {
+    stop("参数 'plot_heatmap' 必须为单一逻辑值（TRUE 或 FALSE）！", call. = FALSE)
+  }
+  
+  # ------------------------- 准备环境 -------------------------
+  cli::cli_h2("🎯 开始绘制 PCA 可视化图")
+
+  suppressPackageStartupMessages({
+    library(Seurat)
+    library(ggplot2)
+    library(patchwork)
+  })
+
+  if (is.null(prefix)) {
+    prefix <- group.by
+  }
+
   # 确保输出目录存在
   figures_dir <- file.path(output_dir, "figures")
   dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
 
-  # 加载必要的包
-  library(Seurat)
-  library(patchwork)
-  library(ggplot2)
+  # ------------------------- DimPlot 图 -------------------------
 
-  # 第一行：按 sample 分组
-  message("绘制 DimPlot（按 sample 分组）...")
+  # 第一行左：按 sample 分组
+  cli::cli_text("绘制 DimPlot（按 sample 分组）")
   p1 <- DimPlot(sce,
                 reduction = reduction,
                 dims = dims,
@@ -82,8 +109,8 @@ visualize_pca <- function(sce,
                 pt.size = 0.5) +
     labs(title = "PCA by Sample") 
 
-  # 第一行：按 group.by 分组
-  message("绘制 DimPlot（按 ", group.by, " 分组）...")
+  # 第一行右：按 group.by 分组
+  cli::cli_text("绘制 DimPlot（按 {group.by} 分组）", .envir = environment())
   p2 <- DimPlot(sce,
                 reduction = reduction,
                 dims = dims,
@@ -93,7 +120,7 @@ visualize_pca <- function(sce,
     labs(title = paste0("PCA by ", group.by)) 
 
   # 第二行：按 group.by 分组，按 split.by 分面
-  message("绘制 DimPlot（按 ", group.by, " 分组，按 ", split.by, " 分面）...")
+  cli::cli_text("绘制 DimPlot（按 {group.by} 分组，按 {split.by} 分面）...", .envir = environment())
   p3 <- DimPlot(sce,
                 reduction = reduction,
                 dims = dims,
@@ -107,48 +134,52 @@ visualize_pca <- function(sce,
   combined_plot <- (p1 | p2) / p3 + plot_layout(heights = c(1, 1))
 
   # 动态生成文件名
-  filename <- paste0("visualize_pca_", group.by, ".png")
+  pca_file <- file.path(figures_dir, paste0(prefix, "_pca_dimplot.png"))
 
   # 保存组合图
-  message("保存组合图...")
   ggsave(file.path(figures_dir, filename),
          plot = combined_plot,
          width = width,
          height = height,
          dpi = dpi)
-  message("组合图已保存至：", file.path(figures_dir, filename))
+  cli::cli_alert_success("✅ DimPlot 已保存：{pca_file}")
 
-  # 绘制 ElbowPlot（主成分的方差贡献图）
-  message("绘制 ElbowPlot（主成分的方差贡献图）...")
-  pca_elbowplot <- ElbowPlot(sce,
-                             reduction = reduction,
-                             ndims = ndims) +
-    labs(title = "Elbow Plot of PCA")
+  # ------------------------- ElbowPlot 图 -------------------------
+  if (plot_elbow) {
+    cli::cli_text("📐 绘制 ElbowPlot（主成分解释度）")
+    p_elbow <- ElbowPlot(seu, reduction = reduction, ndims = ndims) +
+              labs(title = "Elbow Plot of PCA")
 
-  # 保存 ElbowPlot
-  elbowplot_file <- file.path(figures_dir, "visualize_pca_elbowplot.png")
-  ggsave(elbowplot_file,
-         plot = pca_elbowplot,
-         width = width,
-         height = height,
-         dpi = dpi)
-  message("ElbowPlot 已保存至：", elbowplot_file)
+    # 保存 ElbowPlot
+    elbow_file <- file.path(figures_dir, paste0(prefix, "_pca_elbowplot.png"))
+    ggsave(elbow_file, 
+          plot = p_elbow, 
+          width = width, 
+          height = height, 
+          dpi = dpi)
+    cli::cli_alert_success("✅ ElbowPlot 已保存：{elbow_file}")
+  }
 
+  # ------------------------- DimHeatmap 图 -------------------------
   # 绘制 DimHeatmap（前 9 个 PCs）
-  message("绘制 DimHeatmap（前 9 个 PCs）...")
-  pca_dimheatmap <- DimHeatmap(sce,
-                               dims = 1:9,
-                               cells = 500,
-                               balanced = TRUE)
+  if (plot_heatmap) {
+    cli::cli_text("🔥 绘制 DimHeatmap（前 9 个主成分）")
+    p_heatmap <- DimHeatmap(sce,
+                            dims = 1:9,
+                            cells = 500,
+                            balanced = TRUE)
 
-  # 保存 DimHeatmap
-  dimheatmap_file <- file.path(figures_dir, "visualize_pca_dimheatmap.png")
-  ggsave(dimheatmap_file,
-         plot = pca_dimheatmap,
-         width = 12,
-         height = 10,
-         dpi = dpi)
-  message("DimHeatmap 已保存至：", dimheatmap_file)
+    # 保存 DimHeatmap
+    heatmap_file <- file.path(figures_dir, paste0(prefix, "_pca_dimheatmap.png"))
+    ggsave(heatmap_file,
+          plot = p_heatmap,
+          width = 12,
+          height = 10,
+          dpi = dpi)
+    cli::cli_alert_success("✅ DimHeatmap 已保存：{heatmap_file}")
+  }
+
+  cli::cli_h2("🎉 PCA 可视化完成！")
 }
-  
+
 #-------------------------------------------------------------------------------
