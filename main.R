@@ -1195,6 +1195,9 @@ cli::cli_text(" - UMAP：{umap_path}")
 # - 确保 processed_data_dir 已定义
 # seu_integrated <- readRDS(file = file.path(processed_data_dir, "scFlowKit_umap.rds"))
 
+# 导入 find_all_markers 模块
+source("Rutils/find_all_markers.R")
+
 cli::cli_h2("Step 4.1: 差异表达分析（FindAllMarkers）")
 
 # 调用封装函数进行差异分析
@@ -1241,6 +1244,9 @@ for (cluster in unique(top_markers$cluster)) {
 #   - max_pval：所有条件中的最大 p 值
 #   - minimump_p_val：所有条件中的最小 p 值（综合 p 值）
 #   - cluster：基因所属的聚类
+
+# 导入 find_conserved_markers 模块
+source("Rutils/find_conserved_markers.R")
 
 cli::cli_h2("步骤 4.3：寻找保守的标志基因（考虑样本条件）...")
 
@@ -1304,6 +1310,9 @@ for (cluster_id in unique(conserved_results$top_conserved_markers$cluster)) {
 #   - pct.2：基因在 ident.2 中的表达比例
 #   - p_val_adj：调整后的 p 值（Bonferroni 校正）
 
+# 导入 find_markers_between_clusters 模块
+source("Rutils/find_markers_between_clusters.R")
+
 cli::cli_h2("步骤 4.3：比较任意聚类的差异表达基因...")
 
 # 确保活跃 assay 是 RNA（差异表达分析基于 RNA assay）
@@ -1336,6 +1345,42 @@ cli::cli_text("Top 差异表达基因（按 avg_log2FC 降序）：")
 top_df <- comparison_results$top_markers
 print(top_df[, c("gene", "p_val_adj", "avg_log2FC", "pct.1", "pct.2")])
 
+#-------------------------------------------------------------------------------
+# 步骤 4.4：可视化 Marker 基因表达（Feature / Vln / Dot）
+#-------------------------------------------------------------------------------
+# - 基于差异分析的 top marker 基因进行可视化。
+# - 主要绘图方式包括：
+#   - FeaturePlot：在 UMAP 空间上展示每个 marker 基因的表达。
+#   - VlnPlot：绘制每个 marker 基因在不同 cluster 中的表达分布。
+#   - DotPlot：可视化每个 cluster 的 top marker 表达强度与比例。
+# - 输出目录结构为：results/figures/markers/by_cluster、.../conserved_across_groups 等，
+#   按照不同 marker 来源分类，便于管理与查阅。
+#
+# 导入 plot_marker 模块
+source("Rutils/plot_marker.R")
+
+cli::cli_h2("步骤 4.4：可视化 Marker 基因表达")
+
+# 设置输出目录
+figure_dir <- file.path(output_dir, "figures", "markers")
+
+#-------------------- 所有聚类标志基因（FindAllMarkers） --------------------
+plot_marker(
+  seu = seu_integrated,
+  top_markers_df = marker_result$top_markers,
+  outdir = file.path(figure_dir, "cluster_markers"),
+  group.by = "seurat_clusters"
+)
+
+#-------------------- 保守标志基因（FindConservedMarkers） --------------------
+plot_marker(
+  seu = seu_integrated,
+  top_markers_df = conserved_results$top_conserved_markers,
+  outdir = file.path(figure_dir, "conserved_markers"),
+  group.by = "seurat_clusters"
+)
+
+
 # 步骤 4.5：细胞注释
 #-------------------------------------------------------------------------------
 # 继续后续分析
@@ -1346,7 +1391,8 @@ print(top_df[, c("gene", "p_val_adj", "avg_log2FC", "pct.1", "pct.2")])
 
 # 已知marker + 点图注释
 
-
+# 确保活跃 assay 是 RNA（差异表达分析基于 RNA assay）
+DefaultAssay(seu_integrated) <- "RNA"
 
 
 # 步骤 4.6：可视化
