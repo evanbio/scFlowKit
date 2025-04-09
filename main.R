@@ -1167,7 +1167,7 @@ cli::cli_text(" - UMAP：{umap_path}")
 
 
 #-------------------------------------------------------------------------------
-# 步骤 4.1：差异表达分析
+# 步骤 4.1：差异表达分析（FindAllMarkers）
 #-------------------------------------------------------------------------------
 
 # - SCTransform 标准化仅针对 3000 个变异最大的基因进行，主要用于降维和聚类
@@ -1180,7 +1180,7 @@ cli::cli_text(" - UMAP：{umap_path}")
 #   - logfc.threshold = 0.5 基因的最小 log2 折叠变化阈值
 #   - verbose = TRUE 显示进度信息
 # - 样本量过大时，可以通过抽样减少计算量
-# - 例如：sce_sub = subset(sce, downsample = 100)，并在 FindAllMarkers 中使用 sce_sub
+# - 例如：seu_sub = subset(seu, downsample = 100)，并在 FindAllMarkers 中使用 seu_sub
 # - 结果为差异表达基因列表，包含以下字段：
 #   - p_val：原始 p 值，表示基因在当前聚类与其他聚类之间的表达差异的显著性（未经多重检验校正）
 #   - avg_log2FC：平均 log2 折叠变化，表示基因在当前聚类（ident.1）相对于其他聚类（ident.2）的表达差异（正值表示上调，负值表示下调）
@@ -1190,86 +1190,34 @@ cli::cli_text(" - UMAP：{umap_path}")
 #   - cluster：基因所属的聚类（例如 0, 1, 2, ...）
 #   - gene：基因名称
 
-
 # 可选：从 .rds 文件加载聚类后的 Seurat 对象（跳过步骤 2.1 到 3.5）
 # - 加载路径：processed_data_dir/scFlowKit_umap.rds
 # - 确保 processed_data_dir 已定义
-sce_integrated <- readRDS(file = file.path(processed_data_dir, "scFlowKit_umap.rds"))
+# sce_integrated <- readRDS(file = file.path(processed_data_dir, "scFlowKit_umap.rds"))
 
-message("步骤 4.1：差异表达分析...")
+cli::cli_h2("Step 4.1: 差异表达分析（FindAllMarkers）")
 
-# 切换到 RNA assay
-message("切换到 RNA assay...")
-DefaultAssay(sce_integrated) <- "RNA"
-message("切换后的 Seurat 对象信息：")
-print(sce_integrated)
+# 调用封装函数进行差异分析
+marker_result <- find_all_markers(
+  seu = seu_integrated,
+  output_dir = file.path(output_dir, "tables"),
+  top_n = 5,
+  test.use = "MAST",
+  only.pos = TRUE,
+  min.pct = 0.25,
+  logfc.threshold = 0.5
+)
 
-# 合并 RNA assay 的 layers
-message("合并 RNA assay 的 layers...")
-sce_integrated <- JoinLayers(sce_integrated, assay = "RNA")
-message("合并后的 Seurat 对象信息：")
-print(sce_integrated)
+# 获取并打印 Top 5 标志基因
+top_markers <- marker_result$top_markers
+cli::cli_text("每个聚类的 Top 5 标志基因：")
 
-# 重新标准化、选择高变基因和缩放数据（使用管道符）
-message("重新标准化、选择高变基因和缩放 RNA assay...")
-sce_integrated <- sce_integrated %>%
-  NormalizeData(assay = "RNA", 
-                normalization.method = "LogNormalize", 
-                scale.factor = 10000,  # 默认值
-                verbose = TRUE) %>%
-  FindVariableFeatures(assay = "RNA",
-                       selection.method = "vst",  # 使用 vst 方法
-                       nfeatures = 2000,  # 选择 2000 个高变基因
-                       verbose = TRUE) %>%
-  ScaleData(assay = "RNA",
-            features = rownames(sce_integrated),  # 使用所有基因（46517 个）
-            verbose = TRUE)
-message("标准化、高变基因选择和缩放后的 Seurat 对象信息：")
-print(sce_integrated)
-
-# 获取所有聚类标签
-clusters <- unique(sce_integrated@meta.data$seurat_clusters)
-message("聚类数量：", length(clusters))
-
-# 使用 FindAllMarkers 分析所有聚类的标志基因
-all_markers_df <- FindAllMarkers(sce_integrated,
-                                 test.use = "MAST",  # 使用 MAST 检验
-                                 only.pos = TRUE,  # 仅返回上调的基因
-                                 min.pct = 0.25,  # 最低表达比例
-                                 logfc.threshold = 0.5,  # 最小 log2 折叠变化
-                                 verbose = TRUE)  # 显示进度信息
-
-# 保存标志基因结果为 CSV 文件
-message("保存标志基因结果...")
-write.csv(all_markers_df, 
-          file = file.path(output_dir, "tables", "scFlowKit_cluster_markers.csv"), 
-          row.names = FALSE)
-message("标志基因结果已保存至：", file.path(output_dir, "table", "scFlowKit_cluster_markers.csv"))
-
-# 输出每个聚类的 top 5 标志基因
-message("每个聚类的 top 5 标志基因：")
-# - top 5 定义：按 log2 折叠变化（avg_log2FC）降序排序
-top_markers <- all_markers_df %>%
-  dplyr::group_by(cluster) %>%
-  dplyr::arrange(desc(avg_log2FC)) %>%
-  dplyr::slice_head(n = 5) %>%
-  dplyr::ungroup()
-
-# 按聚类分组打印 top 5 标志基因，并保存到文件
-write.csv(top_markers, 
-          file = file.path(output_dir, "tables", "scFlowKit_top5_markers.csv"), 
-          row.names = FALSE)
-message("Top 5 标志基因已保存至：", file.path(output_dir, "table", "scFlowKit_top5_markers.csv"))
-
-
-# 按聚类分组打印 top 5 标志基因
 for (cluster in unique(top_markers$cluster)) {
-  message("聚类 ", cluster, "：")
+  cli::cli_text("Cluster {cluster}:")
   cluster_top <- top_markers[top_markers$cluster == cluster, ]
   print(cluster_top[, c("gene", "p_val_adj", "avg_log2FC", "pct.1", "pct.2")])
 }
 
-#-------------------------------------------------------------------------------
 
 
 #-------------------------------------------------------------------------------
@@ -1346,10 +1294,10 @@ message("标志基因可视化已完成，图表保存至：", marker_viz_dir)
 
 
 #-------------------------------------------------------------------------------
-# 步骤 4.3：寻找保守的标志基因（考虑样本条件）
+# 步骤 4.2：寻找保守的标志基因（考虑样本条件）
 #-------------------------------------------------------------------------------
 
-# - 引入样本条件分组（例如 tumor vs normal），寻找保守的标志基因
+# - 引入样本条件分组（例如 tumor vs normal），寻找保守的标志基因，即在不同条件下都显著的基因
 # - 使用 Seurat 的 FindConservedMarkers 函数，常用参数：
 #   - ident.1：目标聚类（例如 "0"）
 #   - grouping.var：条件分组变量（例如 "condition"）
@@ -1368,85 +1316,45 @@ message("标志基因可视化已完成，图表保存至：", marker_viz_dir)
 #   - max_pval：所有条件中的最大 p 值
 #   - minimump_p_val：所有条件中的最小 p 值（综合 p 值）
 #   - cluster：基因所属的聚类
-message("步骤 4.3：寻找保守的标志基因（考虑样本条件）...")
+
+cli::cli_h2("步骤 4.3：寻找保守的标志基因（考虑样本条件）...")
 
 # 确保活跃 assay 是 RNA（差异表达分析基于 RNA assay）
 DefaultAssay(sce_integrated) <- "RNA"
 
-# 引入条件分组（假设 donor1 和 donor2 是 tumor，donor3 和 donor4 是 normal）
-message("引入条件分组（tumor vs normal）...")
-sce_integrated@meta.data$condition <- ifelse(sce_integrated@meta.data$sample %in% c("5k_pbmc_donor1", "5k_pbmc_donor2"), "condition1", "condition2")
-message("条件分组分布：")
-print(table(sce_integrated@meta.data$condition))
+# 设置条件分组变量（必须已存在于 meta.data 中）
+grouping_var <- "condition"  # 示例：condition，可根据实际情况修改
 
-# 获取所有聚类标签
-clusters <- unique(sce_integrated@meta.data$seurat_clusters)
-message("聚类数量：", length(clusters))
-
-# 使用 FindConservedMarkers 寻找每个聚类的保守标志基因
-message("运行 FindConservedMarkers 寻找保守标志基因...")
-conserved_markers_list <- list()
-for (cluster in clusters) {
-  message("寻找聚类 ", cluster, " 的保守标志基因...")
-  markers <- FindConservedMarkers(sce_integrated,
-                                  ident.1 = cluster,  # 目标聚类
-                                  grouping.var = "condition",  # 按条件分组（tumor vs normal）
-                                  test.use = "MAST",  # 使用 MAST 检验
-                                  only.pos = TRUE,  # 仅返回上调的基因
-                                  min.pct = 0.25,  # 最低表达比例
-                                  logfc.threshold = 0.5,  # 最小 log2 折叠变化
-                                  verbose = TRUE)
-  if (nrow(markers) > 0) {
-    # 将行名（基因名）转换为 gene 列
-    markers <- markers %>%
-      tibble::rownames_to_column(var = "gene")
-    markers$cluster <- cluster
-    # 重置行名，避免合并时添加前缀
-    rownames(markers) <- NULL
-    conserved_markers_list[[as.character(cluster)]] <- markers
-  }
+# 确保 Seurat 对象存在分组信息（如果没有就创建示例）
+if (!"condition" %in% colnames(sce_integrated@meta.data)) {
+  cli::cli_alert_warning("未找到分组变量 'condition'，将自动生成示例分组...")
+  sce_integrated@meta.data$condition <- ifelse(
+    sce_integrated@meta.data$sample %in% c("5k_pbmc_donor1", "5k_pbmc_donor2"),
+    "condition1", "condition2"
+  )
 }
 
-# 合并所有聚类的保守标志基因
-message("合并所有聚类的保守标志基因...")
-conserved_markers_df <- do.call(rbind, conserved_markers_list)
+# 执行保守标志基因分析
+conserved_results <- find_conserved_markers(
+  seu = seu_integrated,
+  grouping.var = grouping_var,
+  output_dir = file.path(output_dir, "tables"),
+  top_n = 5,
+  test.use = "MAST",
+  only.pos = TRUE,
+  min.pct = 0.25,
+  logfc.threshold = 0.5
+)
 
-# 保存保守标志基因结果为 CSV 文件
-message("保存保守标志基因结果...")
-conserved_markers_file <- file.path(output_dir, "tables", "scFlowKit_conserved_markers.csv")
-write.csv(conserved_markers_df, file = conserved_markers_file, row.names = FALSE)
-message("保守标志基因结果已保存至：", conserved_markers_file)
+for (cluster_id in unique(conserved_results$top_conserved_markers$cluster)) {
+  cli::cli_text("Cluster {cluster_id}：")
 
-# 输出每个聚类的 top 5 保守标志基因
-message("提取每个聚类的 top 5 保守标志基因...")
-# 动态选择所有以 _avg_log2FC 结尾的列
-log2fc_cols <- grep("_avg_log2FC$", names(conserved_markers_df), value = TRUE)
+  cluster_top <- conserved_results$top_conserved_markers %>%
+    dplyr::filter(cluster == cluster_id) %>%
+    dplyr::select(gene, minimump_p_val, dplyr::contains("_avg_log2FC"))
 
-# 计算所有条件的 avg_log2FC 均值
-conserved_markers_df <- conserved_markers_df %>%
-  dplyr::mutate(mean_log2FC = rowMeans(dplyr::select(., all_of(log2fc_cols))))
-
-top_conserved_markers <- conserved_markers_df %>%
-  dplyr::group_by(cluster) %>%
-  dplyr::arrange(desc(mean_log2FC)) %>% # 按 avg_log2FC 均值降序排序
-  dplyr::slice_head(n = 5) %>%
-  dplyr::ungroup()
-
-# 保存 top 5 保守标志基因到文件
-top_conserved_markers_file <- file.path(output_dir, "tables", "scFlowKit_top5_conserved_markers.csv")
-write.csv(top_conserved_markers, file = top_conserved_markers_file, row.names = FALSE)
-message("Top 5 保守标志基因已保存至：", top_conserved_markers_file)
-
-# 按聚类分组打印 top 5 保守标志基因
-message("打印每个聚类的 top 5 保守标志基因：")
-# 动态选择打印字段：gene, minimump_p_val, 以及所有 _avg_log2FC 列
-print_cols <- c("gene", "minimump_p_val", log2fc_cols)
-for (cluster in unique(top_conserved_markers$cluster)) {
-  message("聚类 ", cluster, "：")
-  cluster_top <- top_conserved_markers[top_conserved_markers$cluster == cluster, ]
-  print(cluster_top[, print_cols])
+  print(cluster_top)
 }
-
 
 #-------------------------------------------------------------------------------
 # 步骤 4.4：比较任意聚类的差异表达基因

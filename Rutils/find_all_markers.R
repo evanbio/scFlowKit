@@ -42,7 +42,7 @@ find_all_markers <- function(
   if (!is.character(output_dir) || length(output_dir) != 1) {
     stop("output_dir 必须为单一字符！", call. = FALSE)
   }
-  if (!is.numeric(top_n) || top_n <= 0) {
+  if (!is.numeric(top_n) || top_n <= 0 || top_n != as.integer(top_n)) {
     stop("top_n 必须为正整数！", call. = FALSE)
   }
   if (!is.character(test.use)) {
