@@ -734,7 +734,7 @@ cli::cli_alert_success("已保存至：{file.path(processed_data_dir, 'scFlowKit
 
 # - 在整合后的数据（或未整合的 SCT assay）上运行 PCA 降维，用于后续聚类和可视化
 # - 参数说明：
-#   - sce_integrated：整合后的 Seurat 对象（包含 integrated assay 或 harmony 降维结果，或未整合的 SCT assay）
+#   - seu_integrated：整合后的 Seurat 对象（包含 integrated assay 或 harmony 降维结果，或未整合的 SCT assay）
 #   - method：整合方法（"none", "cca", "harmony"，默认 "cca"）
 #   - assay：输入的 assay 名称（默认 "integrated"，仅在 method = "cca" 时有效；method = "none" 时使用 "SCT"）
 #   - reduction：输入的降维结果（默认 "harmony"，仅在 method = "harmony" 时有效）
@@ -869,12 +869,12 @@ plot_sc_pca(seu_integrated,
 #   - dims = 1:20：使用 PCA 的前 20 个主成分
 #   - k.param = 20：邻居数量（默认 20）
 #   - verbose = TRUE：显示进度信息
-# - 结果存储在 sce_integrated@graphs 中（包括 integrated_nn 和 integrated_snn）
+# - 结果存储在 seu_integrated@graphs 中（包括 integrated_nn 和 integrated_snn）
 
 cli::cli_h2("步骤 3.1：构建邻居图")
 
 # 构建邻居图
-seu_integrated <- FindNeighbors(sce_integrated,
+seu_integrated <- FindNeighbors(seu_integrated,
                                 reduction = "pca",
                                 dims = 1:20,  # 使用前 20 个主成分
                                 k.param = 20,  # 邻居数量
@@ -1193,7 +1193,7 @@ cli::cli_text(" - UMAP：{umap_path}")
 # 可选：从 .rds 文件加载聚类后的 Seurat 对象（跳过步骤 2.1 到 3.5）
 # - 加载路径：processed_data_dir/scFlowKit_umap.rds
 # - 确保 processed_data_dir 已定义
-# sce_integrated <- readRDS(file = file.path(processed_data_dir, "scFlowKit_umap.rds"))
+# seu_integrated <- readRDS(file = file.path(processed_data_dir, "scFlowKit_umap.rds"))
 
 cli::cli_h2("Step 4.1: 差异表达分析（FindAllMarkers）")
 
@@ -1217,81 +1217,6 @@ for (cluster in unique(top_markers$cluster)) {
   cluster_top <- top_markers[top_markers$cluster == cluster, ]
   print(cluster_top[, c("gene", "p_val_adj", "avg_log2FC", "pct.1", "pct.2")])
 }
-
-
-
-#-------------------------------------------------------------------------------
-# 步骤 4.2：可视化标志基因
-#-------------------------------------------------------------------------------
-
-# - 可视化每个聚类的 top 标志基因，验证聚类结果
-# - 使用 Seurat 的 FeaturePlot、VlnPlot 和 DotPlot 函数
-# - FeaturePlot 在 UMAP 空间上绘制基因表达（散点图）
-# - VlnPlot 绘制基因在不同聚类中的表达分布（小提琴图）
-# - DotPlot 绘制基因在不同聚类中的表达比例和表达量（点图）
-# - 可视化结果保存到子目录 results/figures/marker_visualization/
-message("步骤 4.2：可视化标志基因...")
-
-# 确保活跃 assay 是 RNA（差异表达分析基于 RNA assay）
-DefaultAssay(sce_integrated) <- "RNA"
-
-# 读取 top 5 标志基因文件（如果从头运行，可以直接使用 top_markers）
-# top_markers <- read.csv(file.path(output_dir, "table", paste0(dataset_name, "_top5_markers.csv")))
-
-# 创建子目录用于存储可视化结果
-marker_viz_dir <- file.path(output_dir, "figures/marker_visualization")
-dir.create(marker_viz_dir, recursive = TRUE, showWarnings = FALSE)
-
-# 提取 top 基因列表（从 top_markers 中获取）
-top_genes <- unique(top_markers$gene)
-message("Top 标志基因数量：", length(top_genes))
-
-# 使用 FeaturePlot 可视化 top 基因在 UMAP 空间的表达
-message("绘制 FeaturePlot（UMAP 空间）...")
-for (gene in top_genes) {
-  p <- FeaturePlot(sce_integrated,
-                   features = gene,
-                   reduction = "umap",  # 使用 UMAP 降维结果
-                   pt.size = 0.5,  # 调整点的大小，减少重叠
-                   alpha = 0.7,  # 调整透明度，提高清晰度
-                   label = TRUE,  # 显示基因名
-                   repel = TRUE)  # 避免标签重叠
-  ggsave(file.path(marker_viz_dir, paste0("umap_feature_", gene, ".png")), p, width = 8, height = 6, dpi = 300)
-}
-
-# 使用 VlnPlot 可视化 top 基因在不同聚类中的表达分布
-message("绘制 VlnPlot（按聚类分组）...")
-for (gene in top_genes) {
-  p <- VlnPlot(sce_integrated,
-               features = gene,
-               group.by = "seurat_clusters",  # 按聚类分组
-               pt.size = 0)  # 不显示单个细胞的点
-  ggsave(file.path(marker_viz_dir, paste0("vlnplot_", gene, ".png")), p, width = 10, height = 6, dpi = 300)
-}
-
-# 使用 DotPlot 可视化 top 基因在不同聚类中的表达比例和表达量
-message("绘制 DotPlot（按聚类分组）...")
-# 使用 top_genes（78 个基因），每次 10 个基因一组
-gene_groups <- split(top_genes, ceiling(seq_along(top_genes) / 10))
-message("DotPlot 分组数量：", length(gene_groups))
-
-# 按基因分组绘制 DotPlot，横坐标为簇，纵坐标为基因
-for (i in seq_along(gene_groups)) {
-  group_genes <- gene_groups[[i]]
-  message("绘制 DotPlot 分组 ", i, "（基因：", paste(group_genes, collapse = ", "), "）...")
-  p <- DotPlot(sce_integrated,
-               features = group_genes,
-               group.by = "seurat_clusters",  # 横坐标为簇
-               dot.scale = 6) +  # 调整点的大小
-    coord_flip() +  # 翻转坐标轴，横坐标为簇，纵坐标为基因
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))  # 旋转横坐标标签（簇）
-  ggsave(file.path(marker_viz_dir, paste0("dotplot_top_markers_group_", i, ".png")), p, width = 12, height = 6, dpi = 300)
-}
-
-message("标志基因可视化已完成，图表保存至：", marker_viz_dir)
-
-#-------------------------------------------------------------------------------
-
 
 #-------------------------------------------------------------------------------
 # 步骤 4.2：寻找保守的标志基因（考虑样本条件）
@@ -1320,16 +1245,16 @@ message("标志基因可视化已完成，图表保存至：", marker_viz_dir)
 cli::cli_h2("步骤 4.3：寻找保守的标志基因（考虑样本条件）...")
 
 # 确保活跃 assay 是 RNA（差异表达分析基于 RNA assay）
-DefaultAssay(sce_integrated) <- "RNA"
+DefaultAssay(seu_integrated) <- "RNA"
 
 # 设置条件分组变量（必须已存在于 meta.data 中）
 grouping_var <- "condition"  # 示例：condition，可根据实际情况修改
 
 # 确保 Seurat 对象存在分组信息（如果没有就创建示例）
-if (!"condition" %in% colnames(sce_integrated@meta.data)) {
+if (!"condition" %in% colnames(seu_integrated@meta.data)) {
   cli::cli_alert_warning("未找到分组变量 'condition'，将自动生成示例分组...")
-  sce_integrated@meta.data$condition <- ifelse(
-    sce_integrated@meta.data$sample %in% c("5k_pbmc_donor1", "5k_pbmc_donor2"),
+  seu_integrated@meta.data$condition <- ifelse(
+    seu_integrated@meta.data$sample %in% c("5k_pbmc_donor1", "5k_pbmc_donor2"),
     "condition1", "condition2"
   )
 }
@@ -1357,7 +1282,7 @@ for (cluster_id in unique(conserved_results$top_conserved_markers$cluster)) {
 }
 
 #-------------------------------------------------------------------------------
-# 步骤 4.4：比较任意聚类的差异表达基因
+# 步骤 4.3：比较任意聚类的差异表达基因
 #-------------------------------------------------------------------------------
 
 # - 允许用户指定一个或多个聚类，比较它们之间的差异表达基因
@@ -1379,58 +1304,37 @@ for (cluster_id in unique(conserved_results$top_conserved_markers$cluster)) {
 #   - pct.2：基因在 ident.2 中的表达比例
 #   - p_val_adj：调整后的 p 值（Bonferroni 校正）
 
-message("步骤 4.4：比较任意聚类的差异表达基因...")
+cli::cli_h2("步骤 4.3：比较任意聚类的差异表达基因...")
 
 # 确保活跃 assay 是 RNA（差异表达分析基于 RNA assay）
-DefaultAssay(sce_integrated) <- "RNA"
+DefaultAssay(seu_integrated) <- "RNA"
 
 # 获取所有聚类标签
-clusters <- unique(sce_integrated@meta.data$seurat_clusters)
-message("可用聚类：", paste(clusters, collapse = ", "))
+clusters <- unique(seu_integrated@meta.data$seurat_clusters)
+cli::cli_text("可用聚类：, {paste(clusters, collapse = ', ')}")
 
 # 用户指定要比较的两个分组（支持一个或多个聚类）
-clusters1 <- c("0")  # 第一个分组（例如聚类 0 ）
-clusters2 <- c("2", "3")  # 第二个分组（例如聚类 2 和 3）
-message("比较的分组：", paste(clusters1, collapse = ","), " vs ", paste(clusters2, collapse = ","))
+ident.1 <- c("0")  # 第一个分组（例如聚类 0 ）
+ident.2 <- c("2", "3")  # 第二个分组（例如聚类 2 和 3）
+cli::cli_text("将比较以下两个聚类组：{paste(ident.1, collapse = ', ')} vs {paste(ident.2, collapse = ', ')}")
 
 # 使用 FindMarkers 比较两个分组
-message("运行 FindMarkers 比较分组 ", paste(clusters1, collapse = ","), " vs ", paste(clusters2, collapse = ","), "...")
-markers <- FindMarkers(sce_integrated,
-                       ident.1 = clusters1,  # 第一个分组
-                       ident.2 = clusters2,  # 第二个分组
-                       subset.ident = c(clusters1, clusters2),  # 限制分析的聚类
-                       test.use = "MAST",  # 使用 MAST 检验
-                       only.pos = TRUE,  # 仅返回上调的基因
-                       min.pct = 0.25,  # 最低表达比例
-                       logfc.threshold = 0.5,  # 最小 log2 折叠变化
-                       verbose = TRUE)
+comparison_results <- find_markers_between_clusters(
+  seu = seu_integrated,
+  ident.1 = ident.1,
+  ident.2 = ident.2,
+  output_dir = file.path(output_dir, "tables"),
+  top_n = 5,
+  test.use = "MAST",
+  only.pos = TRUE,
+  min.pct = 0.25,
+  logfc.threshold = 0.5
+)
 
-# 将行名（基因名）转换为 gene 列
-markers <- markers %>%
-  tibble::rownames_to_column(var = "gene")
-
-# 保存差异表达基因结果为 CSV 文件
-message("保存差异表达基因结果...")
-comparison_name <- paste0("cluster_", paste(clusters1, collapse = "_"), "_vs_", paste(clusters2, collapse = "_"))
-markers_file <- file.path(output_dir, "tables", paste0("scFlowKit_markers_", comparison_name, ".csv"))
-write.csv(markers, file = markers_file, row.names = FALSE)
-message("差异表达基因结果已保存至：", markers_file)
-
-# 输出 top 5 差异表达基因（按 avg_log2FC 排序）
-message("提取 top 5 差异表达基因（按 avg_log2FC 排序）...")
-top_markers <- markers %>%
-  dplyr::arrange(desc(avg_log2FC)) %>%  # 按 avg_log2FC 降序排序
-  dplyr::slice_head(n = 5)
-
-# 保存 top 5 差异表达基因到文件
-top_markers_file <- file.path(output_dir, "tables", paste0("scFlowKit_top5_markers_", comparison_name, ".csv"))
-write.csv(top_markers, file = top_markers_file, row.names = FALSE)
-message("Top 5 差异表达基因已保存至：", top_markers_file)
-
-# 打印 top 5 差异表达基因
-message("打印 top 5 差异表达基因：")
-print_cols <- c("gene", "p_val_adj", "avg_log2FC", "pct.1", "pct.2")
-print(top_markers[, print_cols])
+# 打印 top 差异表达基因
+cli::cli_text("Top 差异表达基因（按 avg_log2FC 降序）：")
+top_df <- comparison_results$top_markers
+print(top_df[, c("gene", "p_val_adj", "avg_log2FC", "pct.1", "pct.2")])
 
 # 步骤 4.5：细胞注释
 #-------------------------------------------------------------------------------

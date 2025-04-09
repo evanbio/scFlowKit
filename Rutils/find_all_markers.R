@@ -91,7 +91,7 @@ find_all_markers <- function(
     only.pos = only.pos,
     min.pct = min.pct,
     logfc.threshold = logfc.threshold,
-    verbose = FALSE
+    verbose = TRUE
   )
 
   # -------------------- 保存结果 --------------------

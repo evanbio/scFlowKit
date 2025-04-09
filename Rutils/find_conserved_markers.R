@@ -91,7 +91,7 @@ find_conserved_markers <- function(
       only.pos = only.pos,
       min.pct = min.pct,
       logfc.threshold = logfc.threshold,
-      verbose = FALSE
+      verbose = TRUE
     )
 
     if (nrow(result) > 0) {
