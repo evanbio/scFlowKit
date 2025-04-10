@@ -1381,6 +1381,44 @@ plot_marker(
 )
 
 
+#-------------------------------------------------------------------------------
+# 步骤 5.1：加载 celldex 提供的参考数据集
+#-------------------------------------------------------------------------------
+#
+# - 本步骤将加载由 celldex 包提供的 7 个常用参考数据集，用于后续的自动注释流程。
+# - 数据集已提前通过 Rutils/download_celldex_refs.R 下载并保存为 .rds 和 .rda 文件。
+# - 统一保存在 data/external/ 目录中。
+# 
+# 参考数据集包括：
+#   1. BlueprintEncodeData                - 人类免疫系统主要细胞亚群（Blueprint & ENCODE）
+#   2. DatabaseImmuneCellExpressionData   - 多数据库整合的人类免疫细胞表达谱
+#   3. HumanPrimaryCellAtlasData          - 人类原代细胞表达谱（Mabbott 等）
+#   4. ImmGenData                         - 小鼠免疫细胞图谱（ImmGen 项目）
+#   5. MonacoImmuneData                   - 人类外周血免疫亚群表达谱（Monaco 等）
+#   6. MouseRNAseqData                    - 小鼠组织来源免疫细胞 RNA-seq 数据
+#   7. NovershternHematopoieticData       - 人类造血干/祖细胞谱系（Novershtern 等）
+#
+# 💡 建议根据研究物种、组织来源及实验特征合理选择参考集。
+# 
+# 当前步骤加载：
+#   → DatabaseImmuneCellExpressionData：覆盖人类多类免疫细胞，整合多个公共数据库（celldex 提供）。
+#   → 本项目为 PBMC 数据，因此该数据集非常适配，可作为 scmap / SingleR 注释的基础。
+#   → 如需探索其他 reference，可手动切换。
+#-------------------------------------------------------------------------------
+
+cli::cli_h2("步骤 5.1：加载参考数据集...")
+
+ref_path <- "data/external/DatabaseImmuneCellExpressionData.rds"
+cli::cli_alert_info("加载参考数据集：{ref_path}")
+
+ref <- readRDS(ref_path)
+
+cli::cli_alert_success("成功加载 DatabaseImmuneCellExpressionData，共包含 {ncol(ref)} 个细胞。")
+
+
+
+
+
 # 步骤 4.5：细胞注释
 #-------------------------------------------------------------------------------
 # 继续后续分析
