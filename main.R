@@ -1416,6 +1416,51 @@ ref <- readRDS(ref_path)
 cli::cli_alert_success("成功加载 DatabaseImmuneCellExpressionData，共包含 {ncol(ref)} 个细胞。")
 
 
+#-------------------------------------------------------------------------------
+# 步骤 5.2：细胞类型自动注释（scmap 方法）
+#-------------------------------------------------------------------------------
+#
+# - 本节将介绍如何使用 scmap 方法对单细胞数据进行细胞类型注释。
+# - scmap 是一套基于参考数据集的快速注释工具，支持 cluster-level 和 cell-level 两种方式：
+#     - scmap-cluster：将目标细胞投射至参考集中的聚类中心，适合快速初步注释。
+#     - scmap-cell   ：基于最近邻细胞比对，支持更细粒度匹配。
+# - 使用前需准备参考集（SingleCellExperiment 格式），包含表达矩阵、细胞标签和 logcounts 层。
+# - 本节使用 `celldex` 包提供的 DatabaseImmuneCellExpressionData 数据集作为注释参考。
+# - 输出注释标签（如 `scmap_cluster_label`）并保存至 CSV 文件，便于后续评估与整合。
+#-------------------------------------------------------------------------------
+
+
+#-------------------------------------------------------------------------------
+# 步骤 5.2.1：使用 scmap-cluster 进行注释
+#-------------------------------------------------------------------------------
+
+cli::cli_h2("步骤 5.2.1：使用 scmap-cluster 进行注释")
+
+# 引入注释函数
+source("Rutils/scmap_cluster_annotation.R")
+
+# 构建ref_sce对象
+
+ref_sce <- SingleCellExperiment::SingleCellExperiment(ref)
+colData(ref_sce)
+
+# 执行注释（默认使用 label.fine）
+scmap_cluster_result <- scmap_cluster_annotation(
+  target_sce = normalized_sce,
+  ref_sce = ref_sce,
+  label_col = "label.fine",
+  threshold = 0.1,
+  log = TRUE
+)
+
+
+# 添加注释结果到主对象中（可选）
+normalized_sce$scmap_label <- scmap_result$anno_vector
+
+cli::cli_alert_success("scmap-cluster 注释完成，标签已添加至 normalized_sce$scmap_label")
+
+
+
 
 
 
