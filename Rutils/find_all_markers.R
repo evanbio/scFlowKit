@@ -61,29 +61,6 @@ find_all_markers <- function(
   # -------------------- 处理 RNA assay --------------------
   DefaultAssay(seu) <- "RNA"
 
-  if ("layers" %in% names(seu[["RNA"]])) {
-    seu <- JoinLayers(seu, assay = "RNA")
-  }
-
-  seu <- seu %>% 
-    NormalizeData(
-      assay = "RNA",
-      normalization.method = "LogNormalize",
-      scale.factor = 10000,
-      verbose = FALSE
-    ) %>%
-    FindVariableFeatures(
-      assay = "RNA",
-      selection.method = "vst",
-      nfeatures = 2000,
-      verbose = FALSE
-    ) %>%
-    ScaleData(
-      assay = "RNA",
-      features = rownames(seu),
-      verbose = FALSE
-    )
-
   # -------------------- 查找标志基因 --------------------
   all_markers <- FindAllMarkers(
     object = seu,

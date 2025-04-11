@@ -34,6 +34,9 @@ se2sce <- function(se) {
   if (!requireNamespace("cli", quietly = TRUE)) {
     stop("请先安装 cli 包：install.packages('cli')", call. = FALSE)
   }
+  if (!requireNamespace("S4Vectors", quietly = TRUE)) {
+  stop("请先安装 S4Vectors 包：BiocManager::install('S4Vectors')", call. = FALSE)
+  }
   # 检查输入参数
   if (!inherits(se, "SummarizedExperiment")) {
     stop("输入对象 se 必须是 SummarizedExperiment 类！", call. = FALSE)
@@ -54,7 +57,7 @@ se2sce <- function(se) {
     assays = SummarizedExperiment::assays(se),
     rowData = SummarizedExperiment::rowData(se),
     colData = SummarizedExperiment::colData(se),
-    metadata = SummarizedExperiment::metadata(se)
+    metadata = S4Vectors::metadata(se)
   )
 
   cli::cli_alert_success("已成功转换为 SingleCellExperiment 对象。")

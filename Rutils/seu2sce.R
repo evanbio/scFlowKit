@@ -76,6 +76,9 @@ seu2sce <- function(seu,
     SingleCellExperiment::rowData(sce) <- gene_info
   }
 
+  # 成功转换提示
+  cli::cli_alert_success("Seurat 对象已成功转换为 SingleCellExperiment 对象！")
+
   # 返回 SingleCellExperiment 对象
   return(sce)
 }

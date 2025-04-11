@@ -1167,6 +1167,46 @@ cli::cli_text(" - UMAP：{umap_path}")
 
 
 #-------------------------------------------------------------------------------
+# 步骤 3.6：合并 RNA layers 并进行标准化处理
+#-------------------------------------------------------------------------------
+
+cli::cli_h2("步骤 3.6：合并 RNA assay 并标准化")
+
+# 设置 DefaultAssay 为 RNA
+DefaultAssay(seu_integrated) <- "RNA"
+
+# 合并 RNA assay 中的多个 layers（如 counts.1, counts.2 等）
+if (!is.null(seu_integrated[["RNA"]]@layers) && length(seu_integrated[["RNA"]]@layers) > 1) {
+  seu_integrated <- JoinLayers(seu_integrated, assay = "RNA")
+  cli::cli_alert_info("已合并 RNA assay 中的多个 layers。")
+}
+
+# 进行标准化、寻找变量基因并缩放
+seu_integrated <- seu_integrated %>% 
+  NormalizeData(
+    assay = "RNA",
+    normalization.method = "LogNormalize",
+    scale.factor = 10000,
+    verbose = FALSE
+  ) %>%
+  FindVariableFeatures(
+    assay = "RNA",
+    selection.method = "vst",
+    nfeatures = 2000,
+    verbose = FALSE
+  ) %>%
+  ScaleData(
+    assay = "RNA",
+    features = rownames(seu_integrated),
+    verbose = FALSE
+  )
+
+# 保存处理后的 Seurat 对象（含标准化）
+rds_path <- file.path(processed_data_dir, "scFlowKit_integrated_joined.rds")
+saveRDS(seu_integrated, file = rds_path)
+cli::cli_alert_success("标准化后的 Seurat 对象已保存至：{rds_path}")
+
+#-------------------------------------------------------------------------------
 # 步骤 4.1：差异表达分析（FindAllMarkers）
 #-------------------------------------------------------------------------------
 
@@ -1191,9 +1231,9 @@ cli::cli_text(" - UMAP：{umap_path}")
 #   - gene：基因名称
 
 # 可选：从 .rds 文件加载聚类后的 Seurat 对象（跳过步骤 2.1 到 3.5）
-# - 加载路径：processed_data_dir/scFlowKit_umap.rds
+# - 加载路径：processed_data_dir/scFlowKit_integrated_joined.rds
 # - 确保 processed_data_dir 已定义
-# seu_integrated <- readRDS(file = file.path(processed_data_dir, "scFlowKit_umap.rds"))
+# seu_integrated <- readRDS(file = file.path(processed_data_dir, "scFlowKit_integrated_joined.rds"))
 
 # 导入 find_all_markers 模块
 source("Rutils/find_all_markers.R")
@@ -1426,7 +1466,18 @@ cli::cli_alert_success("成功加载 DatabaseImmuneCellExpressionData，共包�
 #     - scmap-cell   ：基于最近邻细胞比对，支持更细粒度匹配。
 # - 使用前需准备参考集（SingleCellExperiment 格式），包含表达矩阵、细胞标签和 logcounts 层。
 # - 本节使用 `celldex` 包提供的 DatabaseImmuneCellExpressionData 数据集作为注释参考。
-# - 输出注释标签（如 `scmap_cluster_label`）并保存至 CSV 文件，便于后续评估与整合。
+# - 输出注释标签（如 `scmap_cluster_label`、`scmap_cell_label`）并保存至 CSV 文件，便于后续评估与整合。
+#
+# 参数说明（适用于 cluster 与 cell 方法）：
+#   - target_sce     : 待注释的 SingleCellExperiment 对象（从 Seurat 转换并标准化）
+#   - ref_sce        : 已知注释的参考 SingleCellExperiment 对象
+#   - label_col      : 在参考对象 colData 中存储细胞类型标签的列名（如 "label.fine"）
+#   - include_genes  : （可选）需强制纳入特征选择的基因名向量
+#   - exclude_genes  : （可选）需从特征选择中排除的基因名向量
+#   - n_features     : 特征基因数量，默认 500
+#   - threshold      : （scmap-cluster）注释相似性阈值（0-1）
+#   - w              : （scmap-cell）用于投票的最近邻细胞数，默认 10
+#   - log            : 是否将注释日志保存到 logs/cell_annotation 文件夹
 #-------------------------------------------------------------------------------
 
 
@@ -1438,28 +1489,102 @@ cli::cli_h2("步骤 5.2.1：使用 scmap-cluster 进行注释")
 
 # 引入注释函数
 source("Rutils/scmap_cluster_annotation.R")
+source("Rutils/se2sce.R")
+source("Rutils/seu2sce.R")
 
 # 构建ref_sce对象
+ref_sce <- se2sce(ref)
 
-ref_sce <- SingleCellExperiment::SingleCellExperiment(ref)
-colData(ref_sce)
+# 构建target_sce对象（从 Seurat 转为 SCE）
+target_sce <- seu2sce(seu_integrated)
+target_sce <- scater::logNormCounts(target_sce)
 
 # 执行注释（默认使用 label.fine）
 scmap_cluster_result <- scmap_cluster_annotation(
-  target_sce = normalized_sce,
+  target_sce = target_sce,
   ref_sce = ref_sce,
   label_col = "label.fine",
   threshold = 0.1,
+  include_genes = NULL, # 可选：强制包含的基因集合（大小写不敏感匹配）
+  exclude_genes = NULL, # 可选：强制排除的基因集合（大小写不敏感匹配）
+  n_features = 500,     # 特征基因数量，默认 500
   log = TRUE
 )
 
+# 获取标签向量
+label_vector <- scmap_cluster_result$anno_vector
 
-# 添加注释结果到主对象中（可选）
-normalized_sce$scmap_label <- scmap_result$anno_vector
+# 获取匹配索引：seurat 中每个细胞在 label_vector 中的位置
+match_idx <- match(colnames(seu_integrated), names(label_vector))
 
-cli::cli_alert_success("scmap-cluster 注释完成，标签已添加至 normalized_sce$scmap_label")
+# 检查是否有未匹配的细胞
+if (any(is.na(match_idx))) {
+  unmatched_cells <- colnames(seu_integrated)[is.na(match_idx)]
+  cli::cli_alert_danger("匹配失败：共 {sum(is.na(match_idx))} 个细胞未能匹配注释标签！")
+  cli::cli_alert_info("示例未匹配细胞名：{head(unmatched_cells, 5)}")
+  stop("匹配失败，请检查细胞名是否一致。")
+}
+
+# 添加 scmap 注释到 meta.data 中（使用 match 对齐）
+seu_integrated$scmap_cluster_label <- label_vector[match_idx]
+
+# 完成提示
+cli::cli_alert_success("scmap-cluster 注释完成，标签已添加至 seu_integrated$scmap_cluster_label")
+
+#-------------------------------------------------------------------------------
+# 步骤 5.2.2：使用 scmap-cell 进行注释
+#-------------------------------------------------------------------------------
+
+cli::cli_h2("步骤 5.2.2：使用 scmap-cell 进行注释")
+
+# 引入注释函数
+source("Rutils/scmap_cell_annotation.R")
+
+# 执行注释（默认使用 label.fine）
+scmap_cell_result <- scmap_cell_annotation(
+  target_sce = target_sce,
+  ref_sce = ref_sce,
+  label_col = "label.fine",
+  w = 10,
+  include_genes = NULL, # 可选：强制包含的基因集合（大小写不敏感匹配）
+  exclude_genes = NULL, # 可选：强制排除的基因集合（大小写不敏感匹配）
+  n_features = 500,     # 特征基因数量，默认 500
+  log = TRUE
+)
+
+# 获取标签向量
+label_vector <- scmap_cell_result$anno_vector
+
+# 获取匹配索引：seurat 中每个细胞在 label_vector 中的位置
+match_idx <- match(colnames(seu_integrated), names(label_vector))
+
+# 检查是否有未匹配的细胞
+if (any(is.na(match_idx))) {
+  unmatched_cells <- colnames(seu_integrated)[is.na(match_idx)]
+  cli::cli_alert_danger("匹配失败：共 {sum(is.na(match_idx))} 个细胞未能匹配注释标签！")
+  cli::cli_alert_info("示例未匹配细胞名：{head(unmatched_cells, 5)}")
+  stop("匹配失败，请检查细胞名是否一致。")
+}
+
+# 添加 scmap-cell 注释到 meta.data 中
+seu_integrated$scmap_cell_label <- label_vector[match_idx]
+
+# 完成提示
+cli::cli_alert_success("scmap-cell 注释完成，标签已添加至 seu_integrated$scmap_cell_label")
 
 
+#-------------------------------------------------------------------------------
+# 步骤 5.3：细胞类型自动注释（SingleR 方法）
+#-------------------------------------------------------------------------------
+#
+# - SingleR 是一种基于参考表达谱进行自动注释的工具，支持单细胞级别或聚类级别的注释。
+# - 本节将使用 celldex 提供的参考数据进行注释，并将结果添加至 Seurat 对象中。
+# - 注释方式包括：
+#     1. 5.3.1：cluster-level 注释（每个聚类一个标签）
+#     2. 5.3.2：cell-level 注释（每个细胞一个标签）
+# - 参考数据：`DatabaseImmuneCellExpressionData` (Human Primary Cell Atlas 数据集)
+# - 依赖包：SingleR, celldex, SummarizedExperiment
+#-------------------------------------------------------------------------------
 
 
 
