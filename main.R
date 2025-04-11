@@ -1698,12 +1698,59 @@ cli::cli_alert_success(paste0("SingleR cell-level 注释完成，",
                               "标签已添加至 seu_integrated$singleR_cell_label"))
 
 
-
-# 步骤 4.5：细胞注释
 #-------------------------------------------------------------------------------
-# 继续后续分析
+# 步骤 5.4：使用 SCINA 进行细胞类型自动注释
+#-------------------------------------------------------------------------------
 
-# SingleR注释
+cli::cli_h2("步骤 5.4：使用 SCINA 进行注释")
+
+# 引入注释函数
+source("Rutils/scina_cell_annotation.R")
+
+# 提取表达矩阵（使用 Seurat 标准化表达 data）
+expr_mat <- Seurat::GetAssayData(seu_integrated, slot = "data")
+
+# 加载 marker 列表（需为命名 list）
+# 示例格式：
+# marker_list <- list(
+#   "T_cells" = c("CD3D", "CD3E"),
+#   "B_cells" = c("CD79A", "MS4A1")
+# )
+source("Rutils/load_scina_markers.R")
+marker_list <- load_scina_markers()  # 返回 list 格式
+
+# 执行注释
+scina_result <- scina_cell_annotation(
+  expr = expr_mat,
+  marker_list = marker_list,
+  max_iter = 100,
+  convergence_n = 10,
+  convergence_rate = 0.99,
+  sensitivity_cutoff = 1,
+  rm_overlap = FALSE,
+  allow_unknown = TRUE,
+  log = TRUE
+)
+
+# 提取注释向量
+label_vector <- scina_result$anno_vector
+
+# 检查匹配情况
+match_idx <- match(colnames(seu_integrated), names(label_vector))
+if (any(is.na(match_idx))) {
+  cli::cli_alert_warning("部分细胞未匹配到 SCINA 标签，可能存在列名不一致")
+}
+
+# 添加到 Seurat meta.data 中
+seu_integrated$scina_cell_label <- label_vector[match_idx]
+
+# 完成提示
+cli::cli_alert_success("SCINA 注释完成，标签已添加至 seu_integrated$scina_cell_label")
+
+
+
+
+
 
 # 差异基因注释
 

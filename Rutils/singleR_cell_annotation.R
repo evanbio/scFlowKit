@@ -188,7 +188,7 @@ singleR_cell_annotation <- function(
   # 保存结果：保存两列数据框为 CSV
   #-------------------------------------------------------------------------------
 
-  output_dir <- "results/tables/cellAnnotation"
+  output_dir <- "results/tables/cell_annotation"
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   outfile <- file.path(output_dir, "singleR_cell_annotation.csv")
   write.csv(anno_table, outfile, row.names = FALSE)
