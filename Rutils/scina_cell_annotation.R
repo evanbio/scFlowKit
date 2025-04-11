@@ -64,12 +64,16 @@ scina_cell_annotation <- function(
   if (!requireNamespace("stringr", quietly = TRUE)) {
     stop("请先安装 stringr 包！", call. = FALSE)
   }
+  if (!requireNamespace("Matrix", quietly = TRUE)) {
+    stop("请先安装 Matrix 包以支持稀疏矩阵！", call. = FALSE)
+  }
 
   #-------------------- 参数校验 --------------------
   # 检查 expr
-  if (!is.matrix(expr)) {
-    stop("参数 'expr' 必须为矩阵类型！", call. = FALSE)
+  if (!(is.matrix(expr) || inherits(expr, "Matrix"))) {
+    stop("参数 'expr' 必须为矩阵类型（matrix 或 Matrix 包中的稀疏矩阵）！", call. = FALSE)
   }
+
   if (nrow(expr) == 0 || ncol(expr) == 0) {
     stop("参数 'expr' 不能为空矩阵！", call. = FALSE)
   }
@@ -142,7 +146,7 @@ scina_cell_annotation <- function(
 
   # 执行注释
   scina_cell_res <- SCINA::SCINA(
-    expr = as.matrix(expr),
+    exp = expr,
     signatures = marker_list,
     max_iter = max_iter,
     convergence_n = convergence_n,
@@ -150,7 +154,7 @@ scina_cell_annotation <- function(
     sensitivity_cutoff = sensitivity_cutoff,
     rm_overlap = rm_overlap,
     allow_unknown = allow_unknown,
-    log_file = NULL  # 使用自定义日志
+    log_file = "logs/cell_annotation/SCINA.log"
   )
 
   #-------------------- 构建注释表 --------------------

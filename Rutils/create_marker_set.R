@@ -90,11 +90,13 @@ create_marker_set <- function(
     }
     df <- tibble::as_tibble(data[, required_cols])
     
-    if (!is.character(df$cell_type) || any(df$cell_type == "")) {
-      stop("列 'cell_type' 必须为非空字符向量！", call. = FALSE)
+    # 检查 cell_type 列：允许 character 或 factor，且值非空
+    if (!(is.character(df$cell_type) || is.factor(df$cell_type)) || any(as.character(df$cell_type) == "")) {
+      stop("列 'cell_type' 必须为非空字符向量或因子！", call. = FALSE)
     }
-    if (!is.character(df$source)) {
-      stop("列 'source' 必须为字符向量！", call. = FALSE)
+    # 检查 source 列：允许 character 或 factor
+    if (!(is.character(df$source) || is.factor(df$source))) {
+      stop("列 'source' 必须为字符向量或因子！", call. = FALSE)
     }
     if (is.character(df$marker_genes)) {
       df$marker_genes <- lapply(df$marker_genes, function(x) strsplit(trimws(x), ",\\s*")[[1]])

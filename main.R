@@ -1708,7 +1708,7 @@ cli::cli_h2("步骤 5.4：使用 SCINA 进行注释")
 source("Rutils/scina_cell_annotation.R")
 
 # 提取表达矩阵（使用 Seurat 标准化表达 data）
-expr_mat <- Seurat::GetAssayData(seu_integrated, slot = "data")
+expr_mat <- Seurat::GetAssayData(seu_integrated, layer = "data")
 
 # 加载 marker 列表（需为命名 list）
 # 示例格式：
@@ -1716,11 +1716,17 @@ expr_mat <- Seurat::GetAssayData(seu_integrated, slot = "data")
 #   "T_cells" = c("CD3D", "CD3E"),
 #   "B_cells" = c("CD79A", "MS4A1")
 # )
-source("Rutils/load_scina_markers.R")
-marker_list <- load_scina_markers()  # 返回 list 格式
+
+source("Rutils/load_marker_set.R")
+marker_set <- load_marker_set(
+  species = "human",
+  set_name = "pbmc_22_10x"
+)
+
+marker_list <- marker_set$markers
 
 # 执行注释
-scina_result <- scina_cell_annotation(
+scina_cell_result <- scina_cell_annotation(
   expr = expr_mat,
   marker_list = marker_list,
   max_iter = 100,
@@ -1733,7 +1739,7 @@ scina_result <- scina_cell_annotation(
 )
 
 # 提取注释向量
-label_vector <- scina_result$anno_vector
+label_vector <- scina_cell_result$anno_vector
 
 # 检查匹配情况
 match_idx <- match(colnames(seu_integrated), names(label_vector))
@@ -1746,10 +1752,6 @@ seu_integrated$scina_cell_label <- label_vector[match_idx]
 
 # 完成提示
 cli::cli_alert_success("SCINA 注释完成，标签已添加至 seu_integrated$scina_cell_label")
-
-
-
-
 
 
 # 差异基因注释

@@ -175,22 +175,22 @@ add_marker_entry <- function(
   cli::cli_alert_success("成功添加新条目并更新 marker set：{json_file}")
 }
 
-# 使用示例
-# 先创建一个初始 marker set
-df <- data.frame(
-  cell_type = c("CD4+ T cells", "NK cells"),
-  marker_genes = c("CD3D, IL7R, CCR7", "NKG7, GNLY"),
-  source = "Manual"
-)
-source("Rutils/create_marker_set.R")
-create_marker_set(data = df, species = "human", set_name = "pan_immune", version = "v1")
-
-# # 添加新条目并更新
-# source("Rutils/add_marker_entry.R")
-add_marker_entry(
-  set_name = "pan_immune",
-  cell_type = "B cells",
-  marker_genes = c("CD19", "CD79A", "MS4A1"),
-  version = "v2",
-  source = "Literature"
-)
+# # 使用示例
+# # 先创建一个初始 marker set
+# df <- data.frame(
+#   cell_type = c("CD4+ T cells", "NK cells"),
+#   marker_genes = c("CD3D, IL7R, CCR7", "NKG7, GNLY"),
+#   source = "Manual"
+# )
+# source("Rutils/create_marker_set.R")
+# create_marker_set(data = df, species = "human", set_name = "pan_immune", version = "v1")
+# 
+# # # 添加新条目并更新
+# # source("Rutils/add_marker_entry.R")
+# add_marker_entry(
+#   set_name = "pan_immune",
+#   cell_type = "B cells",
+#   marker_genes = c("CD19", "CD79A", "MS4A1"),
+#   version = "v2",
+#   source = "Literature"
+# )
