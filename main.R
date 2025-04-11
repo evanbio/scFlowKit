@@ -1574,17 +1574,135 @@ cli::cli_alert_success("scmap-cell 注释完成，标签已添加至 seu_integra
 
 
 #-------------------------------------------------------------------------------
-# 步骤 5.3：细胞类型自动注释（SingleR 方法）
+# 步骤 5.3：使用 SingleR 进行细胞类型自动注释
 #-------------------------------------------------------------------------------
 #
-# - SingleR 是一种基于参考表达谱进行自动注释的工具，支持单细胞级别或聚类级别的注释。
-# - 本节将使用 celldex 提供的参考数据进行注释，并将结果添加至 Seurat 对象中。
-# - 注释方式包括：
-#     1. 5.3.1：cluster-level 注释（每个聚类一个标签）
-#     2. 5.3.2：cell-level 注释（每个细胞一个标签）
-# - 参考数据：`DatabaseImmuneCellExpressionData` (Human Primary Cell Atlas 数据集)
-# - 依赖包：SingleR, celldex, SummarizedExperiment
+# 概述：
+# SingleR 是一种利用参考表达谱进行自动细胞类型注释的工具，支持聚类级别和单细胞级别的
+# 标签预测。本节通过 celldex 提供的参考数据集对细胞类型进行注释，并将结果整合到 Seurat
+# 对象的 meta.data 中。
+#
+# 注释模式：
+# - 5.3.1：聚类级别注释（为每个聚类分配一个统一标签）
+# - 5.3.2：单细胞级别注释（为每个细胞分配独立标签）
+#
+# 参考数据集：
+# - `DatabaseImmuneCellExpressionData`（Human Primary Cell Atlas, HPCA 数据集）
+#
+# 依赖包：
+# - SingleR, celldex, SummarizedExperiment
+#
+# 参数说明：
+# - test: 待注释的目标数据（支持 SummarizedExperiment 或矩阵），此处使用 `target_sce`
+# - ref: 参考数据集（支持 SummarizedExperiment、矩阵或 list），此处使用 `ref_sce`
+# - labels: 参考数据的细胞类型标签，此处为 `ref_sce$label.fine`
+# - clusters: 目标数据的聚类标签，此处为 `seu_integrated$seurat_clusters`
+#
+# 返回结果：
+# 本节的注释过程通过调用封装函数（如 `singleR_cluster_annotation` 和 `singleR_cell_annotation`）
+# 执行，返回结果为一个列表，包含以下内容：
+# - 对于聚类级别注释（5.3.1）：
+#   - singleR_cluster_annotation: SingleR 的原始输出（DFrame 对象），包含每个聚类的得分、
+#     初步标签和剪枝后的最终标签等详细信息。
+#   - cluster_anno_table: 数据框，列为 `cluster`（聚类 ID）和 `singleR_cluster_label`（预测标签），
+#     展示每个聚类的注释结果。
+#   - cluster_anno_vector: 命名向量，以聚类 ID 为名，值为预测标签，便于快速查找。
+#   - anno_table: 数据框，列为 `cell`（细胞 ID）和 `singleR_cluster_label`（预测标签），
+#     将聚类标签映射到每个细胞。
+#   - anno_vector: 命名向量，以细胞 ID 为名，值为预测标签，用于直接整合到 Seurat 对象。
+# - 对于单细胞级别注释（5.3.2）：
+#   - singleR_cell_annotation: SingleR 的原始输出（DFrame 对象），包含每个细胞的得分和标签信息。
+#   - anno_table: 数据框，列为 `cell`（细胞 ID）和 `singleR_cell_label`（预测标签），
+#     提供每个细胞的注释结果。
+#   - anno_vector: 命名向量，以细胞 ID 为名，值为预测标签，直接用于 Seurat 对象的 meta.data。
+# 返回的列表结构清晰，支持后续分析和可视化，NA 标签会被替换为 "ambiguous" 以标记不确定性。
 #-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+# 步骤 5.3.1：使用 SingleR (cluster mode) 进行聚类级别注释
+#-------------------------------------------------------------------------------
+
+cli::cli_h2("步骤 5.3.1：使用 SingleR (cluster mode) 进行注释")
+
+# 加载 SingleR cluster 注释函数
+source("Rutils/singleR_cluster_annotation.R")
+
+# 执行 SingleR cluster-level 注释
+singleR_cluster_result <- singleR_cluster_annotation(
+  target_sce = target_sce,           # 查询数据：SingleCellExperiment 对象
+  ref_sce = ref_sce,                 # 参考数据：SingleCellExperiment 对象
+  labels = ref_sce$label.fine,                   # 参考标签：字符向量或因子
+  clusters = seu_integrated$seurat_clusters,     # 聚类信息：字符向量
+  genes = "de",                      # 使用差异表达基因作为特征
+  sd.thresh = 1,                     # 标准差过滤阈值
+  de.method = "classic",             # 差异分析方法
+  quantile = 0.8,                    # 相似性过滤的分位数
+  fine.tune = TRUE,                  # 启用微调
+  prune = TRUE,                      # 启用标签剪枝
+  assay.type.test = "logcounts",     # 查询数据的 assay 层
+  assay.type.ref = "logcounts",      # 参考数据的 assay 层
+  log = TRUE                         # 记录日志
+)
+
+# 获取细胞级别的标签向量
+label_vector <- singleR_cluster_result$anno_vector
+
+# 对齐并添加标签至 Seurat 对象的 meta.data
+match_idx <- match(colnames(seu_integrated), names(label_vector))
+if (any(is.na(match_idx))) {
+  cli::cli_alert_warning("部分细胞未匹配到 label_vector，可能存在数据不一致")
+}
+seu_integrated$singleR_cluster_label <- label_vector[match_idx]
+
+# 完成提示
+cli::cli_alert_success(paste0("SingleR cluster-level 注释完成，",
+                              "标签已添加至 seu_integrated$singleR_cluster_label"))
+
+#-------------------------------------------------------------------------------
+# 步骤 5.3.2：使用 SingleR (cell mode) 进行注释
+#-------------------------------------------------------------------------------
+
+cli::cli_h2("步骤 5.3.2：使用 SingleR (cell mode) 进行注释")
+
+# 执行 cell-level 注释
+singleR_cell_annotation <- SingleR::SingleR(
+  test = target_sce,
+  ref = ref_sce,
+  labels = ref_sce$label.fine,
+  genes = "de",
+  sd.thresh = 1,
+  de.method = "classic",
+  quantile = 0.8,
+  fine.tune = TRUE,
+  prune = TRUE,
+  assay.type.test = "logcounts",
+  assay.type.ref  = "logcounts"
+)
+
+# 提取细胞标签
+cell_anno_vector <- singleR_cell_annotation$pruned.labels
+names(cell_anno_vector) <- rownames(singleR_cell_annotation)
+cell_anno_vector[is.na(cell_anno_vector)] <- "ambiguous"
+
+# 生成细胞注释表
+anno_table <- tibble::tibble(
+  cell = names(cell_anno_vector),
+  singleR_cell_label = cell_anno_vector
+)
+
+# 封装结果
+singleR_cell_result <- list(
+  singleR_cell_annotation = singleR_cell_annotation,
+  anno_table               = anno_table,
+  anno_vector              = cell_anno_vector
+)
+
+# 写入 meta.data
+label_vector <- singleR_cell_result$anno_vector
+seu_integrated$singleR_cell_label <- label_vector[colnames(seu_integrated)]
+
+cli::cli_alert_success("SingleR 细胞注释已完成，标签写入 seu_integrated$singleR_cell_label")
+
 
 
 
