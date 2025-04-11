@@ -1659,51 +1659,43 @@ cli::cli_alert_success(paste0("SingleR cluster-level 注释完成，",
                               "标签已添加至 seu_integrated$singleR_cluster_label"))
 
 #-------------------------------------------------------------------------------
-# 步骤 5.3.2：使用 SingleR (cell mode) 进行注释
+# 步骤 5.3.2：使用 SingleR (cell mode) 进行单细胞级别注释
 #-------------------------------------------------------------------------------
 
 cli::cli_h2("步骤 5.3.2：使用 SingleR (cell mode) 进行注释")
 
-# 执行 cell-level 注释
-singleR_cell_annotation <- SingleR::SingleR(
-  test = target_sce,
-  ref = ref_sce,
-  labels = ref_sce$label.fine,
-  genes = "de",
-  sd.thresh = 1,
-  de.method = "classic",
-  quantile = 0.8,
-  fine.tune = TRUE,
-  prune = TRUE,
-  assay.type.test = "logcounts",
-  assay.type.ref  = "logcounts"
+# 加载 SingleR cell 注释函数
+source("Rutils/singleR_cell_annotation.R")
+
+# 执行 SingleR cell-level 注释
+singleR_cell_result <- singleR_cell_annotation(
+  target_sce = target_sce,           # 查询数据：SingleCellExperiment 对象
+  ref_sce = ref_sce,                 # 参考数据：SingleCellExperiment 对象
+  labels = ref_sce$label.fine,                   # 参考标签：字符向量或因子
+  genes = "de",                      # 使用差异表达基因作为特征
+  sd.thresh = 1,                     # 标准差过滤阈值
+  de.method = "classic",             # 差异分析方法
+  quantile = 0.8,                    # 相似性过滤的分位数
+  fine.tune = TRUE,                  # 启用微调
+  prune = TRUE,                      # 启用标签剪枝
+  assay.type.test = "logcounts",     # 查询数据的 assay 层
+  assay.type.ref = "logcounts",      # 参考数据的 assay 层
+  log = TRUE                         # 记录日志
 )
 
-# 提取细胞标签
-cell_anno_vector <- singleR_cell_annotation$pruned.labels
-names(cell_anno_vector) <- rownames(singleR_cell_annotation)
-cell_anno_vector[is.na(cell_anno_vector)] <- "ambiguous"
-
-# 生成细胞注释表
-anno_table <- tibble::tibble(
-  cell = names(cell_anno_vector),
-  singleR_cell_label = cell_anno_vector
-)
-
-# 封装结果
-singleR_cell_result <- list(
-  singleR_cell_annotation = singleR_cell_annotation,
-  anno_table               = anno_table,
-  anno_vector              = cell_anno_vector
-)
-
-# 写入 meta.data
+# 获取细胞级别的标签向量
 label_vector <- singleR_cell_result$anno_vector
-seu_integrated$singleR_cell_label <- label_vector[colnames(seu_integrated)]
 
-cli::cli_alert_success("SingleR 细胞注释已完成，标签写入 seu_integrated$singleR_cell_label")
+# 对齐并添加标签至 Seurat 对象的 meta.data
+match_idx <- match(colnames(seu_integrated), names(label_vector))
+if (any(is.na(match_idx))) {
+  cli::cli_alert_warning("部分细胞未匹配到 label_vector，可能存在数据不一致")
+}
+seu_integrated$singleR_cell_label <- label_vector[match_idx]
 
-
+# 完成提示
+cli::cli_alert_success(paste0("SingleR cell-level 注释完成，",
+                              "标签已添加至 seu_integrated$singleR_cell_label"))
 
 
 
