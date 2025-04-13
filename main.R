@@ -1717,7 +1717,9 @@ expr_mat <- Seurat::GetAssayData(seu_integrated, layer = "data")
 #   "B_cells" = c("CD79A", "MS4A1")
 # )
 
+# 引入marker_set加载函数
 source("Rutils/load_marker_set.R")
+
 marker_set <- load_marker_set(
   species = "human",
   set_name = "pbmc_22_10x"
@@ -1753,6 +1755,55 @@ seu_integrated$scina_cell_label <- label_vector[match_idx]
 # 完成提示
 cli::cli_alert_success("SCINA 注释完成，标签已添加至 seu_integrated$scina_cell_label")
 
+
+#-------------------------------------------------------------------------------
+# 步骤 5.5：共识注释（Consensus Annotation）
+#-------------------------------------------------------------------------------
+#
+# - 本节基于前述多个自动注释方法（如 SCINA、SingleR、scmap）整合结果
+# - 使用多数投票法生成最终的共识标签列（consensus_label）
+# - 若某细胞在多个方法中达成一致（至少 N 个方法），则赋值该标签
+# - 否则标记为 "ambiguous"，避免误判
+# - 共识标签将写入 Seurat 对象 meta.data 并保存为 CSV 表格
+# - 额外保存标签向量、分布统计等信息至全局变量 consensus_result
+#
+# 参数说明：
+# - label_cols    : 参与共识注释的列名，如 scina_label、singleR_cell_label 等
+# - min_agreement : 至少多少方法达成一致才视为有效共识（默认 2）
+# - default       : 无法达成一致时使用的标签（默认 "ambiguous"）
+#
+# 输出结果：
+# - seu$consensus_label：写入 Seurat 对象的统一注释标签
+# - results/tables/cell_annotation/consensus_label.csv：注释表
+# - logs/cell_annotation/consensus_annotation.log：运行日志
+# - consensus_result：全局变量，包含表格、向量与标签统计
+#-------------------------------------------------------------------------------
+
+cli::cli_h2("步骤 5.5：生成共识注释标签")
+
+# 引入共识函数
+source("Rutils/consensus_annotation.R")
+
+# 设置共识参数
+label_cols <- c(
+  "scmap_cluster_label",
+  "scmap_cell_label",
+  "singleR_cluster_label",
+  "singleR_cell_label",
+  "scina_cell_label"
+)
+
+# 执行共识注释
+seu_integrated <- consensus_annotation(
+  seu = seu_integrated,
+  label_cols = label_cols,
+  output_col = "consensus_label",
+  min_agreement = 3,
+  default = "ambiguous",
+  log = TRUE
+)
+
+cli::cli_alert_success("共识注释完成，已写入 meta.data$consensus_label")
 
 # 差异基因注释
 
