@@ -1805,6 +1805,52 @@ seu_integrated <- consensus_annotation(
 
 cli::cli_alert_success("共识注释完成，已写入 meta.data$consensus_label")
 
+
+#-------------------------------------------------------------------------------
+# 步骤 5.6：聚类级别注释整合（Cluster-Level Annotation Integration）
+#-------------------------------------------------------------------------------
+#
+# 背景说明：
+# 本步骤将细胞层级注释（如 SCINA、SingleR、共识标签）整合为聚类级别标签。
+# 通过计算每个聚类内细胞标签的比例，确定主导标签作为该聚类的最终注释结果。
+#
+# 策略说明：
+# - 若某标签在聚类中的占比 ≥ min_ratio（默认 0.7），则视为主导标签；
+# - 否则标记为 "ambiguous"，表示该聚类中细胞标签分布不一致。
+#
+# 输入参数：
+# - cell_label_col ：用于聚类注释的细胞标签列名（如 consensus_label）
+# - cluster_col     ：聚类列名（默认 seurat_clusters）
+# - min_ratio       ：最小主导比例阈值，默认 0.7
+# - output_col      ：输出的聚类注释列名，默认 consensus_anno_cluster
+#
+# 输出结果：
+# - 在 Seurat 对象中新增列：seu[[output_col]]
+# - 保存聚类标签表至 results/tables/cell_annotation/
+# - 日志保存至 logs/cell_annotation/{output_col}.log
+# - 额外信息保存至全局变量 cluster_anno_result
+#
+# 使用函数：
+# - Rutils/annotate_clusters.R
+#-------------------------------------------------------------------------------
+
+# 加载聚类注释函数
+source("Rutils/annotate_clusters.R")
+
+# 执行注释
+seu_integrated <- annotate_clusters(
+  seu = seu_integrated,
+  cell_label_col = "consensus_label",            # 输入细胞层标签
+  cluster_col = "seurat_clusters",               # 聚类来源
+  min_ratio = 0.7,                               # 主导比例
+  default = "ambiguous",                         # 默认标签
+  output_col = "consensus_anno_cluster",         # 输出列名
+  log = TRUE                                     # 是否记录日志
+)
+
+
+
+
 # 差异基因注释
 
 # 已知marker + 点图注释
