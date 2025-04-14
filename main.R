@@ -1385,8 +1385,68 @@ cli::cli_text("Top 差异表达基因（按 avg_log2FC 降序）：")
 top_df <- comparison_results$top_markers
 print(top_df[, c("gene", "p_val_adj", "avg_log2FC", "pct.1", "pct.2")])
 
+
 #-------------------------------------------------------------------------------
-# 步骤 4.4：可视化 Marker 基因表达（Feature / Vln / Dot）
+# 步骤 4.4：比较不同条件下的表达差异（每个聚类内）
+#-------------------------------------------------------------------------------
+#
+# 本步骤用于在每个指定聚类内部，比较两个条件（如 WT vs KO）之间的基因表达差异。
+# 常用于研究某些细胞类型在不同处理组之间的响应差异。
+#
+# 函数：
+# - compare_conditions_within_cluster()
+#
+# 输入：
+# - Seurat 对象（seu_integrated），需包含 RNA 表达矩阵、聚类信息和条件列（如 "condition"）
+#
+# 参数说明：
+# - group.by    ：条件分组变量（例如 "condition"）
+# - ident.1     ：条件组1（例如 "condition1"）
+# - ident.2     ：条件组2（例如 "condition2"）
+# - cluster_id  ：可选，指定聚类 ID 向量（默认 NULL 表示所有聚类）
+#
+# 输出结果：
+# - full_table  ：所有聚类的完整差异表达结果
+# - top_table   ：每个聚类 Top N 上调基因
+# - CSV         ：保存至 results/tables/
+# - 日志        ：logs/find_markers/compare_conditions_within_cluster.log
+#-------------------------------------------------------------------------------
+
+cli::cli_h2("步骤 4.4：比较不同条件下的表达差异（每个聚类）")
+
+# 引入分析函数
+source("Rutils/compare_conditions_within_cluster.R")
+
+# 设置条件参数
+group.by <- "condition"
+ident.1 <- "condition1"
+ident.2 <- "condition2"
+
+# 可选指定聚类（默认使用所有聚类）
+# cluster_id <- c("0", "1", "2")
+cluster_id <- c("0", "1", "2")
+
+# 执行分析
+compare_conditions_result <- compare_conditions_within_cluster(
+  seu = seu_integrated,
+  group.by = group.by,
+  ident.1 = ident.1,
+  ident.2 = ident.2,
+  cluster_col = "seurat_clusters",
+  cluster_id = cluster_id,
+  output_dir = "results/tables",
+  test.use = "MAST",
+  only.pos = TRUE,
+  min.pct = 0.25,
+  logfc.threshold = 0.5,
+  top_n = 5,
+  log = TRUE
+)
+
+cli::cli_alert_success("条件差异表达分析完成（按聚类）")
+
+#-------------------------------------------------------------------------------
+# 步骤 4.5：可视化 Marker 基因表达（Feature / Vln / Dot）
 #-------------------------------------------------------------------------------
 # - 基于差异分析的 top marker 基因进行可视化。
 # - 主要绘图方式包括：
@@ -1399,7 +1459,7 @@ print(top_df[, c("gene", "p_val_adj", "avg_log2FC", "pct.1", "pct.2")])
 # 导入 plot_marker 模块
 source("Rutils/plot_marker.R")
 
-cli::cli_h2("步骤 4.4：可视化 Marker 基因表达")
+cli::cli_h2("步骤 4.5：可视化 Marker 基因表达")
 
 # 设置输出目录
 figure_dir <- file.path(output_dir, "figures", "markers")
@@ -1849,34 +1909,85 @@ seu_integrated <- annotate_clusters(
 )
 
 
-
-
-# 差异基因注释
-
-# 已知marker + 点图注释
-
-# 确保活跃 assay 是 RNA（差异表达分析基于 RNA assay）
-DefaultAssay(seu_integrated) <- "RNA"
-
-
-# 步骤 4.6：可视化
 #-------------------------------------------------------------------------------
-# 继续后续分析
-
-# 基因，metadata
-
-# ridgeplot
-# vlnplot
-# featureplot
-# dotplot
-# doheatmap
-
-
-# 步骤 4.7：Condition之间比较
+# 步骤 5.7：根据 marker set 匹配 Top DEG 实现手动注释
 #-------------------------------------------------------------------------------
-# 继续后续分析
+#
+# 本步骤用于将 cluster 的 top DEG 与 marker set 中的基因集合进行交集匹配，
+# 用于推荐最可能的细胞类型标签（manual_label_<set_name>）。
+# 输出将写入 Seurat 对象 meta.data，并保存结果表与交集矩阵。
+#
+# 需要提前准备：
+# - deg_all：包含 cluster, gene, avg_log2FC, pct.1, pct.2 的差异分析表
+# - marker_set：由 load_marker_set() 加载的标准 marker 集
+#
+# 函数：
+# - manual_cluster_annotation()：执行 DEG 匹配与注释推荐
+#
+# 输出结果：
+# - seu_integrated$manual_label_<set_name>：每个细胞的手动注释标签
+# - 全局变量 manual_cluster_result：包含注释表、标签向量和命中矩阵
+# - CSV：结果表保存至 results/tables/cell_annotation/manual_cluster_annotation_<set_name>.csv
+# - LOG：运行日志保存至 logs/cell_annotation/manual_cluster_annotation.log
+#-------------------------------------------------------------------------------
 
-# 不同条件下同一细胞类型之间的差异
+cli::cli_h2("步骤 5.7：根据 marker set 匹配 Top DEG 实现手动注释")
+
+# 引入函数
+source("Rutils/manual_cluster_annotation.R")
+
+# 加载 marker 列表（需为命名 list）
+# 示例格式：
+# marker_list <- list(
+#   "T_cells" = c("CD3D", "CD3E"),
+#   "B_cells" = c("CD79A", "MS4A1")
+# )
+
+# 引入marker_set加载函数
+source("Rutils/load_marker_set.R")
+
+marker_set <- load_marker_set(
+  species = "human",
+  set_name = "pbmc_22_10x"
+)
+
+# 设置 marker set 名称
+set_name <- "pbmc_22_10x"
+
+# 提取 deg_all
+deg_all <- marker_result$all_markers
+  
+# 执行手动注释匹配
+manual_cluster_result <- manual_cluster_annotation(
+  deg = deg_all,
+  marker_set = marker_set$markers,
+  set_name = set_name,
+  top_n = 5,
+  logfc_cutoff = 0.25,
+  pct1_cutoff = 0.5,
+  pct2_cutoff = 0.2,
+  default = "ambiguous",
+  log = TRUE
+)
+
+# 自动生成写入列名（如 "manual_label_pbmc_22_10x"）
+label_col <- paste0("manual_label_", set_name)
+
+# 构建 cluster → label 的映射向量
+cluster_map <- manual_cluster_result$result_vector
+
+# 构建命名向量：每个细胞的聚类 → 注释标签
+label_vector <- cluster_map[as.character(seu_integrated$seurat_clusters)]
+names(label_vector) <- colnames(seu_integrated)
+
+# 添加到 meta.data 中
+seu_integrated[[label_col]] <- label_vector
+
+# 提示完成
+cli::cli_alert_success("手动注释完成，已写入 meta.data${label_col}")
+
+
+
 
 
 # 步骤 4.7：差异基因富集分析 & 通路打分
